@@ -9,7 +9,7 @@ declare global {
 }
 
 type ChannelId = "matchtv" | "rpl" | "fnl" | "cup" | "national" | "personal_bot";
-type PreviewKind = "poster" | "schedule" | "team_round" | "team_month" | "standings" | "national_extended" | "national_final";
+type PreviewKind = "schedule" | "team_round" | "team_month" | "standings" | "national_extended" | "national_final";
 
 interface ChannelsUiState {
   selectedChannel: ChannelId;
@@ -31,7 +31,7 @@ interface ChannelsUiState {
 const CH_STATE: ChannelsUiState = {
   selectedChannel: "matchtv",
   comp: "rpl",
-  kind: "poster",
+  kind: "schedule",
   fixtureId: "",
   round: "",
   month: "",
@@ -50,14 +50,13 @@ const RULE_LABELS: Array<{ key: string; title: string; desc: string; forChannels
   { key: "teamOfRound", title: "Сборная тура", desc: "Тактическое поле 4-3-3 + MVP и тренер сразу после тура", forChannels: ["matchtv", "rpl", "fnl", "cup", "personal_bot"] },
   { key: "teamOfMonth", title: "Сборная месяца", desc: "Итоги календарного месяца автоматически", forChannels: ["matchtv", "rpl", "fnl", "cup", "personal_bot"] },
   { key: "standingsAfterTour", title: "Турнирная таблица после тура", desc: "Обновлённая таблица сразу по окончании тура", forChannels: ["matchtv", "rpl", "fnl", "cup", "personal_bot"] },
-  { key: "nationalExtended", title: "Расширенный состав сборной", desc: "Афиша + список вызова сразу при публикации", forChannels: ["matchtv", "national", "personal_bot"] },
+  { key: "nationalExtended", title: "Расширенный состав сборной", desc: "Карточка + список вызова сразу при публикации", forChannels: ["matchtv", "national", "personal_bot"] },
   { key: "nationalFinal", title: "Итоговый вызов (кого вызвали)", desc: "Финальная заявка сборной сразу при публикации", forChannels: ["matchtv", "national", "personal_bot"] },
   { key: "liveMatchEvents", title: "Лайв-события матчей", desc: "Старт, голы, карточки, перерыв, итог и интервью", forChannels: ["matchtv", "rpl", "fnl", "cup", "national"] },
   { key: "transfersAndNews", title: "Трансферы, жеребьёвки и новости", desc: "Сделки клубов, вызовы и студийные эфиры", forChannels: ["matchtv", "rpl", "fnl", "cup"] },
 ];
 
 const KIND_LABELS: Array<{ id: PreviewKind; label: string; comps?: string[] }> = [
-  { id: "poster", label: "Афиша матча" },
   { id: "schedule", label: "Расписание дня / тура" },
   { id: "team_round", label: "Сборная тура", comps: ["rpl", "fnl", "cup"] },
   { id: "team_month", label: "Сборная месяца", comps: ["rpl", "fnl", "cup"] },
@@ -328,7 +327,7 @@ async function renderAdminChannelsTab(ab: HTMLElement, _ov: any, onRefreshAdmin:
 
   const syncCompSelections = () => {
     if (CH_STATE.comp === "national") {
-      if (!["poster", "schedule", "national_extended", "national_final"].includes(CH_STATE.kind)) {
+      if (!["schedule", "national_extended", "national_final"].includes(CH_STATE.kind)) {
         CH_STATE.kind = "national_final";
       }
       const nBlock = compOpts.national?.[CH_STATE.teamType] || { matches: [] };
@@ -338,7 +337,7 @@ async function renderAdminChannelsTab(ab: HTMLElement, _ov: any, onRefreshAdmin:
       }
     } else {
       if (CH_STATE.kind === "national_extended" || CH_STATE.kind === "national_final") {
-        CH_STATE.kind = "poster";
+        CH_STATE.kind = "schedule";
       }
       const cBlock = compOpts[CH_STATE.comp] || { rounds: [], months: [], fixtures: [] };
       if (cBlock.fixtures?.length && !cBlock.fixtures.some((x: any) => x.id === CH_STATE.fixtureId)) {
@@ -363,33 +362,7 @@ async function renderAdminChannelsTab(ab: HTMLElement, _ov: any, onRefreshAdmin:
     const allowedKinds = KIND_LABELS.filter((k) => !k.comps || k.comps.includes(CH_STATE.comp));
 
     let contextualControlsHtml = "";
-    if (CH_STATE.kind === "poster") {
-      const mList = curCompOpts.matches || curCompOpts.fixtures || [];
-      contextualControlsHtml = `
-        <div class="chn-field-grid">
-          <div>
-            <label class="chn-label">Матч для афиши</label>
-            <select id="chn_fx_sel">
-              ${mList.length ? mList.map((f: any) => `<option value="${escHtml(f.id)}" ${f.id === CH_STATE.fixtureId ? "selected" : ""}>${escHtml(f.label)}</option>`).join("") : `<option value="">Ближайший матч турнира</option>`}
-            </select>
-          </div>
-          ${CH_STATE.comp === "national" ? `
-            <div>
-              <label class="chn-label">Команда сборной</label>
-              <select id="chn_nt_type">
-                <option value="main" ${CH_STATE.teamType === "main" ? "selected" : ""}>Основная сборная России</option>
-                <option value="u21" ${CH_STATE.teamType === "u21" ? "selected" : ""}>Молодёжная сборная U21</option>
-              </select>
-            </div>
-          ` : `
-            <div>
-              <label class="chn-label">Дата (МСК)</label>
-              <input id="chn_date_inp" type="date" value="${escHtml(CH_STATE.date)}">
-            </div>
-          `}
-        </div>
-      `;
-    } else if (CH_STATE.kind === "schedule") {
+    if (CH_STATE.kind === "schedule") {
       contextualControlsHtml = `
         <div class="chn-field-grid">
           <div>
@@ -568,8 +541,8 @@ async function renderAdminChannelsTab(ab: HTMLElement, _ov: any, onRefreshAdmin:
           <div class="chn-panel">
             <div class="chn-panel-head">
               <div>
-                <h3 class="chn-panel-title">Студия афиш и предпросмотр поста</h3>
-                <div class="chn-panel-sub">Генерация HD-постера и моментальная публикация в выбранные каналы</div>
+                <h3 class="chn-panel-title">Студия графики и предпросмотр поста</h3>
+                <div class="chn-panel-sub">Генерация HD-карточки и моментальная публикация в выбранные каналы</div>
               </div>
               <button type="button" class="btn alt sm" id="chn_reload_preview">↻ Обновить графику</button>
             </div>
@@ -610,7 +583,7 @@ async function renderAdminChannelsTab(ab: HTMLElement, _ov: any, onRefreshAdmin:
               <div class="chn-tg-bubble">
                 <div class="chn-tg-img-wrap" id="chn_preview_img_box">
                   ${CH_STATE.previewLoading
-                    ? `<div style="color:#94a3b8;font-size:13px;padding:40px">Рендер HD-афиши...</div>`
+                    ? `<div style="color:#94a3b8;font-size:13px;padding:40px">Рендер HD-графики...</div>`
                     : CH_STATE.previewError
                       ? `<div style="color:#fca5a5;font-size:13px;padding:24px;text-align:center">${escHtml(CH_STATE.previewError)}</div>`
                       : CH_STATE.previewData?.imageDataUrl
@@ -681,7 +654,7 @@ async function renderAdminChannelsTab(ab: HTMLElement, _ov: any, onRefreshAdmin:
           <div class="chn-panel-head">
             <div>
               <h3 class="chn-panel-title">Журнал эфиров и доставок (${(data.logs || []).length})</h3>
-              <div class="chn-panel-sub">История отправленных афиш, расписаний, таблиц и сообщений по каналам</div>
+              <div class="chn-panel-sub">История отправленных расписаний, таблиц и сообщений по каналам</div>
             </div>
             ${(data.logs || []).length ? `<button type="button" class="btn alt sm" id="chn_clear_logs">Очистить журнал</button>` : ""}
           </div>

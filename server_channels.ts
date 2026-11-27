@@ -127,7 +127,6 @@ export type ChannelId = "matchtv" | "rpl" | "fnl" | "cup" | "national" | "person
 
 export type ChannelRuleKey =
   | "schedule0001"
-  | "posters0001"
   | "teamOfRound"
   | "teamOfMonth"
   | "standingsAfterTour"
@@ -137,7 +136,6 @@ export type ChannelRuleKey =
   | "transfersAndNews";
 
 export type ChannelPublishKind =
-  | "poster"
   | "schedule"
   | "team_round"
   | "team_month"
@@ -147,7 +145,6 @@ export type ChannelPublishKind =
 
 export interface ChannelRules {
   schedule0001?: boolean;
-  posters0001?: boolean;
   teamOfRound?: boolean;
   teamOfMonth?: boolean;
   standingsAfterTour?: boolean;
@@ -245,7 +242,6 @@ const DEFAULT_CHANNEL_SPECS: Record<ChannelId, Omit<ChannelConfig, "chatId">> = 
     enabled: true,
     rules: {
       schedule0001: true,
-      posters0001: false,
       teamOfRound: true,
       teamOfMonth: true,
       standingsAfterTour: true,
@@ -258,13 +254,12 @@ const DEFAULT_CHANNEL_SPECS: Record<ChannelId, Omit<ChannelConfig, "chatId">> = 
   rpl: {
     id: "rpl",
     name: "РПЛ",
-    subtitle: "Российская Премьер-Лига · расписание, афиши, таблицы и сборные туров",
+    subtitle: "Российская Премьер-Лига · расписание, таблицы и сборные туров",
     badgeText: "РПЛ",
     accent: "#16a34a",
     enabled: true,
     rules: {
       schedule0001: true,
-      posters0001: false,
       teamOfRound: true,
       teamOfMonth: true,
       standingsAfterTour: true,
@@ -275,13 +270,12 @@ const DEFAULT_CHANNEL_SPECS: Record<ChannelId, Omit<ChannelConfig, "chatId">> = 
   fnl: {
     id: "fnl",
     name: "ФНЛ",
-    subtitle: "Первая Лига · расписание, афиши, таблицы и лучшие игроки",
+    subtitle: "Первая Лига · расписание, таблицы и лучшие игроки",
     badgeText: "ФНЛ",
     accent: "#2563eb",
     enabled: true,
     rules: {
       schedule0001: true,
-      posters0001: false,
       teamOfRound: true,
       teamOfMonth: true,
       standingsAfterTour: true,
@@ -298,7 +292,6 @@ const DEFAULT_CHANNEL_SPECS: Record<ChannelId, Omit<ChannelConfig, "chatId">> = 
     enabled: true,
     rules: {
       schedule0001: true,
-      posters0001: false,
       teamOfRound: true,
       teamOfMonth: true,
       standingsAfterTour: true,
@@ -309,13 +302,12 @@ const DEFAULT_CHANNEL_SPECS: Record<ChannelId, Omit<ChannelConfig, "chatId">> = 
   national: {
     id: "national",
     name: "Сборная России",
-    subtitle: "Основная и молодёжная U21 · списки вызова, афиши и матчи",
+    subtitle: "Основная и молодёжная U21 · списки вызова и матчи",
     badgeText: "СБОРНАЯ РОССИИ",
     accent: "#1d4ed8",
     enabled: true,
     rules: {
       schedule0001: true,
-      posters0001: false,
       nationalExtended: true,
       nationalFinal: true,
       liveMatchEvents: true,
@@ -331,7 +323,6 @@ const DEFAULT_CHANNEL_SPECS: Record<ChannelId, Omit<ChannelConfig, "chatId">> = 
     enabled: true,
     rules: {
       schedule0001: false,
-      posters0001: false,
       teamOfRound: false,
       teamOfMonth: false,
       standingsAfterTour: false,
@@ -500,8 +491,37 @@ export function createChannelsController(ctx: ChannelsServerContext) {
       }
     };
 
+    const resolveLocalFileBuffer = (logoCandidate: string): { buf: Buffer; isSvg: boolean } | null => {
+      const c = String(logoCandidate || "").trim();
+      if (!c) return null;
+      if (c.startsWith("data:image/svg+xml")) {
+        const idx = c.indexOf(",");
+        if (idx > 0) {
+          const meta = c.slice(0, idx);
+          const body = c.slice(idx + 1);
+          const buf = meta.includes(";base64") ? Buffer.from(body, "base64") : Buffer.from(decodeURIComponent(body), "utf8");
+          if (buf.length > 0) return { buf, isSvg: true };
+        }
+      } else if (!/^https?:\/\//i.test(c) && !c.startsWith("data:")) {
+        const cleanRel = c.replace(/^\/+/, "");
+        const candidates = [
+          path.join(ctx.rootDir, "public", cleanRel),
+          path.join(ctx.rootDir, cleanRel),
+        ];
+        for (const fp of candidates) {
+          if (fs.existsSync(fp) && fs.statSync(fp).isFile()) {
+            const buf = fs.readFileSync(fp);
+            if (buf.length > 0) {
+              const isSvg = c.toLowerCase().endsWith(".svg") || buf.subarray(0, 512).toString("utf8").includes("<svg");
+              return { buf, isSvg };
+            }
+          }
+        }
+      }
+      return null;
+    };
+
     const p = String(rawLogoPath || "").trim();
-    if (!p) return await fallbackPng();
     if (p.startsWith("data:image/png;base64,") || p.startsWith("data:image/jpeg;base64,")) return p;
 
     const cacheKey = `${p}::${name}`;
@@ -509,35 +529,23 @@ export function createChannelsController(ctx: ChannelsServerContext) {
     if (cached) return cached;
 
     try {
-      let buf: Buffer | null = null;
-      let isSvgInput = p.startsWith("data:image/svg+xml") || p.toLowerCase().endsWith(".svg");
-      if (p.startsWith("data:image/svg+xml")) {
-        const idx = p.indexOf(",");
-        if (idx > 0) {
-          const meta = p.slice(0, idx);
-          const body = p.slice(idx + 1);
-          buf = meta.includes(";base64") ? Buffer.from(body, "base64") : Buffer.from(decodeURIComponent(body), "utf8");
-        }
-      } else if (!/^https?:\/\//i.test(p)) {
-        const cleanRel = p.replace(/^\/+/, "");
-        const candidates = [
-          path.join(ctx.rootDir, "public", cleanRel),
-          path.join(ctx.rootDir, cleanRel),
-        ];
-        for (const fp of candidates) {
-          if (fs.existsSync(fp) && fs.statSync(fp).isFile()) {
-            buf = fs.readFileSync(fp);
-            break;
-          }
+      let resolved = resolveLocalFileBuffer(p);
+      if (!resolved && name) {
+        const allTeams: any[] = ctx.getDb()?.teams || [];
+        const normName = String(name).trim().toLowerCase();
+        const baseName = normName.replace(/\s*\([^)]*\)\s*$/g, "").replace(/[-–\s]*(2|м|u21)$/i, "").trim();
+        const matched =
+          allTeams.find((t) => String(t.name || "").trim().toLowerCase() === normName) ||
+          (baseName && baseName.length >= 3
+            ? allTeams.find((t) => String(t.name || "").trim().toLowerCase() === baseName)
+            : null);
+        if (matched) {
+          resolved = resolveLocalFileBuffer(matched.logo || ctx.teamLogo(matched.id) || "");
         }
       }
-      if (buf && buf.length > 0) {
-        if (!isSvgInput) {
-          const head = buf.subarray(0, 512).toString("utf8");
-          if (head.includes("<svg")) isSvgInput = true;
-        }
+      if (resolved && resolved.buf.length > 0) {
         const sharp = await getSharp();
-        const rasterBuf = isSvgInput ? await renderSvgToPngBuffer(buf.toString("utf8"), 128) : buf;
+        const rasterBuf = resolved.isSvg ? await renderSvgToPngBuffer(resolved.buf.toString("utf8"), 128) : resolved.buf;
         const pngBuf = await sharp(rasterBuf)
           .resize(128, 128, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
           .png({ compressionLevel: 9 })
@@ -731,89 +739,6 @@ export function createChannelsController(ctx: ChannelsServerContext) {
 
   /* ────────────── SVG → PNG Бродкаст-генератор ────────────── */
 
-  async function renderMatchPosterPng(posterData: any): Promise<{ buffer: Buffer; svg: string }> {
-    const meta = COMP_META[posterData.comp] || COMP_META.rpl;
-    const [hUri, aUri] = await Promise.all([
-      resolveLogoDataUri(posterData.homeLogo, posterData.homeName, posterData.homeColors),
-      resolveLogoDataUri(posterData.awayLogo, posterData.awayName, posterData.awayColors),
-    ]);
-    const hc = posterData.homeColors?.primary || "#16a34a";
-    const ac = posterData.awayColors?.primary || "#2563eb";
-    const hName = truncText(posterData.homeName, 19);
-    const aName = truncText(posterData.awayName, 19);
-    const rDateRu = ctx.ruDateStr(posterData.realDate || "");
-    const rTime = String(posterData.realTime || "19:00").slice(0, 5);
-    const isDone = posterData.status === "done";
-    const centerMain = isDone ? `${posterData.hg ?? 0}:${posterData.ag ?? 0}` : "VS";
-    const venueLine = [posterData.stadium, posterData.city].filter(Boolean).join(" · ") || "Прямая трансляция";
-
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
-      <defs>
-        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#070b14"/>
-          <stop offset="50%" stop-color="#0f172a"/>
-          <stop offset="100%" stop-color="#060911"/>
-        </linearGradient>
-        <radialGradient id="glowL" cx="0.22" cy="0.52" r="0.45">
-          <stop offset="0%" stop-color="${hc}" stop-opacity="0.48"/>
-          <stop offset="100%" stop-color="${hc}" stop-opacity="0"/>
-        </radialGradient>
-        <radialGradient id="glowR" cx="0.78" cy="0.52" r="0.45">
-          <stop offset="0%" stop-color="${ac}" stop-opacity="0.48"/>
-          <stop offset="100%" stop-color="${ac}" stop-opacity="0"/>
-        </radialGradient>
-        <linearGradient id="accentBar" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stop-color="${meta.primary}"/>
-          <stop offset="100%" stop-color="${meta.secondary}"/>
-        </linearGradient>
-      </defs>
-      <rect width="1200" height="675" fill="url(#bg)"/>
-      <rect width="1200" height="675" fill="url(#glowL)"/>
-      <rect width="1200" height="675" fill="url(#glowR)"/>
-      <path d="M0 540 L1200 410 L1200 675 L0 675 Z" fill="#ffffff" fill-opacity="0.025"/>
-      <circle cx="600" cy="340" r="245" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1.5"/>
-      <line x1="600" y1="95" x2="600" y2="585" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1.5"/>
-      <rect x="0" y="0" width="1200" height="6" fill="url(#accentBar)"/>
-
-      <!-- Header -->
-      <rect x="48" y="34" width="320" height="40" rx="6" fill="url(#accentBar)"/>
-      <text x="64" y="60" fill="#ffffff" font-family="'Noto Sans Display','Noto Sans',sans-serif" font-weight="800" font-size="16" letter-spacing="1.2">${svgEsc(meta.title)}</text>
-      <text x="390" y="60" fill="#cbd5e1" font-family="'Noto Sans',sans-serif" font-weight="600" font-size="18">${svgEsc(truncText(posterData.roundLabel, 36))}</text>
-      <text x="1152" y="60" text-anchor="end" fill="#f8fafc" font-family="'JetBrains Mono','Noto Sans',monospace" font-weight="700" font-size="17">${svgEsc(rDateRu)} · ${svgEsc(rTime)} МСК</text>
-      <line x1="48" y1="94" x2="1152" y2="94" stroke="#ffffff" stroke-opacity="0.12" stroke-width="1"/>
-
-      <!-- Home Pedestal -->
-      <rect x="82" y="148" width="360" height="360" rx="22" fill="#0b1220" fill-opacity="0.72" stroke="${hc}" stroke-opacity="0.55" stroke-width="2"/>
-      <circle cx="262" cy="288" r="102" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.12" stroke-width="1.5"/>
-      <image href="${hUri}" x="182" y="208" width="160" height="160" preserveAspectRatio="xMidYMid meet"/>
-      <text x="262" y="446" text-anchor="middle" fill="#ffffff" font-family="'Noto Sans Display','Noto Sans',sans-serif" font-weight="800" font-size="30">${svgEsc(hName)}</text>
-      <text x="262" y="478" text-anchor="middle" fill="#94a3b8" font-family="'Noto Sans',sans-serif" font-weight="600" font-size="15">ХОЗЯЕВА ПОЛЯ</text>
-
-      <!-- Away Pedestal -->
-      <rect x="758" y="148" width="360" height="360" rx="22" fill="#0b1220" fill-opacity="0.72" stroke="${ac}" stroke-opacity="0.55" stroke-width="2"/>
-      <circle cx="938" cy="288" r="102" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.12" stroke-width="1.5"/>
-      <image href="${aUri}" x="858" y="208" width="160" height="160" preserveAspectRatio="xMidYMid meet"/>
-      <text x="938" y="446" text-anchor="middle" fill="#ffffff" font-family="'Noto Sans Display','Noto Sans',sans-serif" font-weight="800" font-size="30">${svgEsc(aName)}</text>
-      <text x="938" y="478" text-anchor="middle" fill="#94a3b8" font-family="'Noto Sans',sans-serif" font-weight="600" font-size="15">ГОСТИ</text>
-
-      <!-- Center VS / Clock -->
-      <rect x="496" y="216" width="208" height="44" rx="8" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.18"/>
-      <text x="600" y="244" text-anchor="middle" fill="#facc15" font-family="'Noto Sans Display','Noto Sans',sans-serif" font-weight="800" font-size="16" letter-spacing="1.4">${isDone ? "ИТОГОВЫЙ СЧЁТ" : "АФИША МАТЧА"}</text>
-      <text x="600" y="346" text-anchor="middle" fill="#ffffff" font-family="'Noto Sans Display','Noto Sans',sans-serif" font-weight="900" font-size="78" letter-spacing="2">${svgEsc(centerMain)}</text>
-      <rect x="496" y="382" width="208" height="58" rx="10" fill="url(#accentBar)"/>
-      <text x="600" y="418" text-anchor="middle" fill="#ffffff" font-family="'JetBrains Mono','Noto Sans',monospace" font-weight="800" font-size="24">${svgEsc(rTime)} МСК</text>
-
-      <!-- Footer -->
-      <rect x="48" y="556" width="1104" height="72" rx="14" fill="#0b1220" fill-opacity="0.88" stroke="#ffffff" stroke-opacity="0.14"/>
-      <circle cx="86" cy="592" r="5" fill="${meta.secondary}"/>
-      <text x="102" y="599" fill="#e2e8f0" font-family="'Noto Sans',sans-serif" font-weight="600" font-size="20">${svgEsc(truncText(venueLine, 55))}</text>
-      <text x="1120" y="599" text-anchor="end" fill="#94a3b8" font-family="'Noto Sans Display','Noto Sans',sans-serif" font-weight="700" font-size="17">ВИРТ РПЛ · ПРЯМОЙ ЭФИР</text>
-    </svg>`;
-
-    const buffer = await renderSvgToPngBuffer(svg, 2400);
-    return { buffer, svg };
-  }
-
   async function renderScheduleCardPng(comp: string, title: string, subtitle: string, items: any[]): Promise<{ buffer: Buffer; svg: string }> {
     const meta = COMP_META[comp] || COMP_META.rpl;
     const rows = items.slice(0, 12);
@@ -846,14 +771,14 @@ export function createChannelsController(ctx: ChannelsServerContext) {
       return `
         <g>
           <rect x="${x}" y="${y}" width="${w}" height="78" rx="12" fill="#0f172a" fill-opacity="0.88" stroke="#ffffff" stroke-opacity="0.12"/>
-          <rect x="${x + 14}" y="${y + 18}" width="78" height="42" rx="8" fill="${meta.primary}" fill-opacity="0.9"/>
-          <text x="${x + 53}" y="${y + 45}" text-anchor="middle" fill="#ffffff" font-family="'JetBrains Mono','Noto Sans',monospace" font-weight="800" font-size="16">${svgEsc(timeStr)}</text>
+          <rect x="${x + 14}" y="${y + 18}" width="76" height="42" rx="8" fill="${meta.primary}" fill-opacity="0.9"/>
+          <text x="${x + 52}" y="${y + 45}" text-anchor="middle" fill="#ffffff" font-family="'JetBrains Mono','Noto Sans',monospace" font-weight="800" font-size="16">${svgEsc(timeStr)}</text>
           ${twoCols ? `
-            <image href="${l.h}" x="${x + 104}" y="${y + 19}" width="40" height="40"/>
-            <text x="${x + 152}" y="${y + 45}" fill="#f8fafc" font-family="'Noto Sans',sans-serif" font-weight="700" font-size="16">${svgEsc(hName)}</text>
-            <text x="${x + w - 152}" y="${y + 45}" text-anchor="end" fill="#f8fafc" font-family="'Noto Sans',sans-serif" font-weight="700" font-size="16">${svgEsc(aName)}</text>
-            <image href="${l.a}" x="${x + w - 144}" y="${y + 19}" width="40" height="40"/>
-            <text x="${midX + 36}" y="${y + 45}" text-anchor="middle" fill="#94a3b8" font-family="'Noto Sans Display',sans-serif" font-weight="800" font-size="15">${svgEsc(scoreOrVs)}</text>
+            <image href="${l.h}" x="${x + 100}" y="${y + 22}" width="34" height="34"/>
+            <text x="${x + 142}" y="${y + 44}" fill="#f8fafc" font-family="'Noto Sans',sans-serif" font-weight="700" font-size="14.5">${svgEsc(hName)}</text>
+            <text x="${x + 310}" y="${y + 44}" text-anchor="middle" fill="#94a3b8" font-family="'Noto Sans Display',sans-serif" font-weight="800" font-size="15">${svgEsc(scoreOrVs)}</text>
+            <text x="${x + w - 58}" y="${y + 44}" text-anchor="end" fill="#f8fafc" font-family="'Noto Sans',sans-serif" font-weight="700" font-size="14.5">${svgEsc(aName)}</text>
+            <image href="${l.a}" x="${x + w - 50}" y="${y + 22}" width="34" height="34"/>
           ` : `
             <text x="${midX - 88}" y="${y + 45}" text-anchor="end" fill="#f8fafc" font-family="'Noto Sans',sans-serif" font-weight="700" font-size="21">${svgEsc(hName)}</text>
             <image href="${l.h}" x="${midX - 76}" y="${y + 15}" width="48" height="48"/>
@@ -1235,24 +1160,6 @@ export function createChannelsController(ctx: ChannelsServerContext) {
     return lines.join("\n").trim();
   }
 
-  function buildPosterHtmlText(posterData: any): string {
-    const meta = COMP_META[posterData.comp] || COMP_META.rpl;
-    const siteUrl = String(ctx.getDb()?.settings?.siteUrl || "").trim().replace(/\/+$/, "");
-    const lines = [
-      `🔥 <b>АФИША МАТЧА · ${ctx.esc(meta.title)}</b>`,
-      `🏟 <b>${ctx.esc(posterData.homeName)} — ${ctx.esc(posterData.awayName)}</b>`,
-      `🏆 ${ctx.esc(posterData.roundLabel || "")}`,
-      `⏰ Начало: <b>${ctx.esc(ctx.ruDateStr(posterData.realDate))} в ${ctx.esc(posterData.realTime)} МСК</b>`,
-    ];
-    if (posterData.stadium || posterData.city) {
-      lines.push(`📍 ${ctx.esc([posterData.stadium, posterData.city].filter(Boolean).join(", "))}`);
-    }
-    if (siteUrl && posterData.id && !String(posterData.id).startsWith("nt_")) {
-      lines.push("", `📺 Матч-центр: ${ctx.esc(siteUrl)}/#/match/${ctx.esc(posterData.id)}`);
-    }
-    return lines.join("\n");
-  }
-
   function buildStandingsHtmlText(comp: string, title: string): string {
     const db = ctx.getDb();
     const meta = COMP_META[comp] || COMP_META.rpl;
@@ -1579,83 +1486,6 @@ export function createChannelsController(ctx: ChannelsServerContext) {
     const db = ctx.getDb();
     const comp = ["rpl", "fnl", "cup", "national"].includes(params.comp) ? params.comp : "rpl";
     const dateStr = /^\d{4}-\d{2}-\d{2}$/.test(String(params.date || "")) ? String(params.date) : ctx.nowMskParts().dateStr;
-
-    if (params.kind === "poster") {
-      let targetFx: any = null;
-      if (params.fixtureId) {
-        targetFx = (db.fixtures || []).find((f: any) => f.id === params.fixtureId);
-        if (!targetFx && comp === "national") {
-          targetFx = collectDailyItemsForComp("national", dateStr).find((x) => x.id === params.fixtureId);
-        }
-      }
-      if (!targetFx) {
-        const todayItems = collectDailyItemsForComp(comp, dateStr);
-        if (todayItems.length) targetFx = todayItems[0];
-      }
-      if (!targetFx && comp === "national") {
-        for (const tt of ["main", "u21"] as const) {
-          const nt = ctx.ensureNationalTeam(tt);
-          const enr = ctx.enrichNationalBreak(nt.current, tt);
-          if (enr.matches?.length) {
-            const m = enr.matches[0];
-            const isHome = m.home !== false;
-            const ruName = tt === "u21" ? "Россия U21" : "Россия";
-            targetFx = {
-              id: `nt_${tt}_${m.id}`,
-              comp: "national",
-              homeName: isHome ? ruName : m.opponent,
-              awayName: isHome ? m.opponent : ruName,
-              homeLogo: isHome ? m.russiaLogo : m.opponentLogo,
-              awayLogo: isHome ? m.opponentLogo : m.russiaLogo,
-              homeColors: isHome ? { primary: "#1d4ed8", secondary: "#dc2626" } : ctx.getTeamColors(m.opponent),
-              awayColors: isHome ? ctx.getTeamColors(m.opponent) : { primary: "#1d4ed8", secondary: "#dc2626" },
-              realDate: String(m.realDate || m.date || dateStr).slice(0, 10),
-              realTime: String(m.realTime || m.time || "19:00").slice(0, 5),
-              roundLabel: tt === "u21" ? "Сборная U21 · Товарищеский матч" : "Сборная России · Товарищеский матч",
-              stadium: m.stadium || "ВТБ Арена",
-              city: m.city || "Москва",
-              status: m.status || "scheduled",
-            };
-            break;
-          }
-        }
-      }
-      if (!targetFx) {
-        targetFx = ctx.seasonFx().find((f) => normalizeFixtureCompKey(f) === comp && f.status !== "done") || ctx.seasonFx().find((f) => normalizeFixtureCompKey(f) === comp);
-      }
-      if (!targetFx && comp === "national") {
-        targetFx = {
-          id: "nt_showcase",
-          comp: "national",
-          homeName: params.teamType === "u21" ? "Россия U21" : "Россия",
-          awayName: "Сербия",
-          homeLogo: "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg",
-          awayLogo: "",
-          homeColors: { primary: "#1d4ed8", secondary: "#dc2626" },
-          awayColors: { primary: "#b91c1c", secondary: "#f8fafc" },
-          realDate: dateStr,
-          realTime: "19:30",
-          roundLabel: params.teamType === "u21" ? "Сборная U21 · Товарищеский матч (шаблон)" : "Сборная России · Товарищеский матч (шаблон)",
-          stadium: "ВТБ Арена",
-          city: "Москва",
-          status: "scheduled",
-        };
-      }
-      if (!targetFx) throw new Error("Не найден матч для генерации афиши");
-      const pData = fixtureToPosterData(targetFx);
-      const { buffer, svg } = await renderMatchPosterPng(pData);
-      const htmlText = buildPosterHtmlText(pData);
-      return {
-        title: `Афиша · ${pData.homeName} — ${pData.awayName}`,
-        subtitle: `${pData.roundLabel} · ${ctx.ruDateStr(pData.realDate)} ${pData.realTime} МСК`,
-        text: htmlText,
-        caption: htmlText,
-        photoBuffer: buffer,
-        svg,
-        ruleKey: "posters0001",
-        comp,
-      };
-    }
 
     if (params.kind === "schedule") {
       let items = collectDailyItemsForComp(comp, dateStr);
@@ -2131,7 +1961,7 @@ export function createChannelsController(ctx: ChannelsServerContext) {
       }
 
       if (!overrideChat) return ctx.fail(res, `Укажите @username или Chat ID для канала «${cfg.name}».`);
-      const testMsg = `📡 <b>${ctx.esc(cfg.name)}</b> · Проверка подключения пройдена!\nКанал готов принимать расписание в 00:01 МСК, афиши, таблицы и сборные туров.`;
+      const testMsg = `📡 <b>${ctx.esc(cfg.name)}</b> · Проверка подключения пройдена!\nКанал готов принимать расписание в 00:01 МСК, таблицы и сборные туров.`;
       const r = await ctx.sendTelegramDirectMessage(overrideToken, overrideChat, testMsg, "HTML");
       if (!r.ok) return ctx.fail(res, `Ошибка отправки в ${overrideChat}: ${r.error}`);
       appendDispatchLog({
@@ -2148,7 +1978,8 @@ export function createChannelsController(ctx: ChannelsServerContext) {
 
     app.get("/api/admin/channels/preview", ctx.admin, async (req, res) => {
       try {
-        const kind = String(req.query.kind || "poster") as ChannelPublishKind;
+        const rawKind = String(req.query.kind || "schedule");
+        const kind = (rawKind === "poster" ? "schedule" : rawKind) as ChannelPublishKind;
         const comp = String(req.query.comp || "rpl");
         const pkg = await buildPackage({
           kind,
@@ -2180,7 +2011,8 @@ export function createChannelsController(ctx: ChannelsServerContext) {
 
     app.post("/api/admin/channels/publish", ctx.admin, async (req, res) => {
       try {
-        const kind = String(req.body?.kind || "poster") as ChannelPublishKind;
+        const rawKind = String(req.body?.kind || "schedule");
+        const kind = (rawKind === "poster" ? "schedule" : rawKind) as ChannelPublishKind;
         const comp = String(req.body?.comp || "rpl");
         const pkg = await buildPackage({
           kind,

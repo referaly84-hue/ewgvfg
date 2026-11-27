@@ -589,22 +589,91 @@ const SUB_FORMAT_PRESETS: Record<string, {
   maxBench: number;
   label: string;
 }> = {
+  none: { mode: "none", maxSubs: 0, maxWindows: 0, maxBench: 12, label: "без замен" },
+  "1_1": { mode: "1_1", maxSubs: 1, maxWindows: 1, maxBench: 12, label: "до 1 замены (1 окно)" },
+  "2_2": { mode: "2_2", maxSubs: 2, maxWindows: 2, maxBench: 12, label: "до 2 замен (2 окна)" },
+  "3_3": { mode: "3_3", maxSubs: 3, maxWindows: 3, maxBench: 12, label: "до 3 замен (3 окна)" },
+  "4_3": { mode: "4_3", maxSubs: 4, maxWindows: 3, maxBench: 12, label: "до 4 замен (3 окна)" },
   standard: { mode: "standard", maxSubs: 5, maxWindows: 3, maxBench: 12, label: "до 5 замен в 3 окна" },
+  "5_3": { mode: "standard", maxSubs: 5, maxWindows: 3, maxBench: 12, label: "до 5 замен в 3 окна" },
+  "5_free": { mode: "5_free", maxSubs: 5, maxWindows: null, maxBench: 14, label: "до 5 замен (окна без ограничений)" },
   "6_3": { mode: "6_3", maxSubs: 6, maxWindows: 3, maxBench: 15, label: "до 6 замен в 3 окна" },
+  "6_4": { mode: "6_4", maxSubs: 6, maxWindows: 4, maxBench: 15, label: "до 6 замен в 4 окна" },
   "7_4": { mode: "7_4", maxSubs: 7, maxWindows: 4, maxBench: 16, label: "до 7 замен в 4 окна" },
+  "8_4": { mode: "8_4", maxSubs: 8, maxWindows: 4, maxBench: 17, label: "до 8 замен в 4 окна" },
+  "9_5": { mode: "9_5", maxSubs: 9, maxWindows: 5, maxBench: 18, label: "до 9 замен в 5 окон" },
   "10_free": { mode: "10_free", maxSubs: 10, maxWindows: null, maxBench: 20, label: "до 10 замен (окна без ограничений)" },
-  unlimited: { mode: "unlimited", maxSubs: null, maxWindows: null, maxBench: 25, label: "неограниченное количество замен" },
-  none: { mode: "none", maxSubs: 0, maxWindows: 0, maxBench: 12, label: "без замен" }
+  "11_free": { mode: "11_free", maxSubs: 11, maxWindows: null, maxBench: 22, label: "до 11 замен (окна без ограничений)" },
+  "15_free": { mode: "15_free", maxSubs: 15, maxWindows: null, maxBench: 25, label: "до 15 замен (окна без ограничений)" },
+  unlimited_3: { mode: "unlim_3", maxSubs: null, maxWindows: 3, maxBench: 25, label: "неограниченное количество замен (в 3 окна)" },
+  unlim_3: { mode: "unlim_3", maxSubs: null, maxWindows: 3, maxBench: 25, label: "неограниченное количество замен (в 3 окна)" },
+  unlimited: { mode: "unlimited", maxSubs: null, maxWindows: null, maxBench: 25, label: "неограниченное количество замен (окна без ограничений)" }
 };
+function parseSubFormatPair(code: string): { mode: string; maxSubs: number | null; maxWindows: number | null } | null {
+  const s = String(code || "").trim().toLowerCase();
+  if (!s || s === "auto") return null;
+  if (SUB_FORMAT_PRESETS[s]) {
+    const p = SUB_FORMAT_PRESETS[s];
+    return { mode: p.mode, maxSubs: p.maxSubs, maxWindows: p.maxWindows };
+  }
+  const unlimWin = s.match(/^(?:unlim|unlimited)_(\d{1,2})$/);
+  if (unlimWin) {
+    const w = clamp(Number(unlimWin[1]), 1, 30);
+    return { mode: `unlim_${w}`, maxSubs: null, maxWindows: w };
+  }
+  if (/^(?:unlim|unlimited)_(?:free|unlim|unlimited)$/.test(s)) {
+    return { mode: "unlimited", maxSubs: null, maxWindows: null };
+  }
+  const numFree = s.match(/^(\d{1,2})_(?:free|unlim|unlimited)$/);
+  if (numFree) {
+    const n = clamp(Number(numFree[1]), 0, 30);
+    if (n === 0) return { mode: "none", maxSubs: 0, maxWindows: 0 };
+    return { mode: `${n}_free`, maxSubs: n, maxWindows: null };
+  }
+  const pair = s.match(/^(\d{1,2})_(\d{1,2})$/);
+  if (pair) {
+    const n = clamp(Number(pair[1]), 0, 30);
+    if (n === 0) return { mode: "none", maxSubs: 0, maxWindows: 0 };
+    const w = clamp(Number(pair[2]), 1, 30);
+    if (n === 5 && w === 3) return { mode: "standard", maxSubs: 5, maxWindows: 3 };
+    return { mode: `${n}_${w}`, maxSubs: n, maxWindows: w };
+  }
+  return null;
+}
 function normalizeSubFormatCode(raw: any): string {
+  if (raw && typeof raw === "object") {
+    if (raw.subUnlimited || raw.unlimitedSubs || raw.maxSubs === null) {
+      if (raw.winUnlimited || raw.unlimitedWindows || raw.maxWindows === null || raw.maxWindows === undefined) return "unlimited";
+      const w = clamp(Math.round(Number(raw.maxWindows) || 3), 1, 30);
+      return `unlim_${w}`;
+    }
+    const n = clamp(Math.round(Number(raw.maxSubs ?? 5)), 0, 30);
+    if (n === 0) return "none";
+    if (raw.winUnlimited || raw.unlimitedWindows || raw.maxWindows === null) return `${n}_free`;
+    const w = clamp(Math.round(Number(raw.maxWindows ?? 3)), 1, 30);
+    return n === 5 && w === 3 ? "standard" : `${n}_${w}`;
+  }
   const s = String(raw || "").trim().toLowerCase();
   if (!s || s === "auto") return "auto";
-  if (SUB_FORMAT_PRESETS[s]) return s;
-  return "auto";
+  const parsed = parseSubFormatPair(s);
+  return parsed ? parsed.mode : "auto";
+}
+function parseFriendlySubFormatInput(b: any): string {
+  if (!b || typeof b !== "object") return "auto";
+  const rawCode = String(b.subFormat || "").trim().toLowerCase();
+  if (rawCode === "custom") {
+    return normalizeSubFormatCode({
+      maxSubs: b.subUnlimited ? null : b.customMaxSubs,
+      maxWindows: b.winUnlimited ? null : b.customMaxWindows,
+      subUnlimited: !!b.subUnlimited,
+      winUnlimited: !!b.winUnlimited
+    });
+  }
+  return normalizeSubFormatCode(b.subFormat);
 }
 function formatSubRulesLabel(maxSubs: number | null, maxWindows: number | null) {
   if (maxSubs === 0) return "без замен";
-  const subsPart = maxSubs == null ? "неограниченное количество замен" : `до ${maxSubs} замен`;
+  const subsPart = maxSubs == null ? "неограниченное количество замен" : (maxSubs === 1 ? "до 1 замены" : `до ${maxSubs} замен`);
   if (maxSubs == null && maxWindows == null) return "неограниченное количество замен (окна без ограничений)";
   const winPart = maxWindows == null ? "окна без ограничений" : `в ${maxWindows} ${maxWindows === 1 ? "окно" : (maxWindows >= 2 && maxWindows <= 4 ? "окна" : "окон")}`;
   return `${subsPart} (${winPart})`;
@@ -617,11 +686,16 @@ function resolveMatchSubRules(target: any) {
     const promptSummary = maxSubs === 0
       ? "ЗАМЕНЫ ЗАПРЕЩЕНЫ (0 замен в этом матче)."
       : `${label}${unlimitedWindows ? "" : " (перерыв в окно не считается)"}`;
+    const computedBench = maxSubs == null
+      ? Math.max(25, maxBench)
+      : maxSubs === 0
+        ? Math.max(12, maxBench)
+        : clamp(Math.max(maxBench, maxSubs > 5 ? maxSubs + 5 : 12), 12, 30);
     return {
       mode,
       maxSubs,
       maxWindows,
-      maxBench: Math.max(12, maxBench),
+      maxBench: computedBench,
       autoBench: 9,
       unlimitedSubs,
       unlimitedWindows,
@@ -636,9 +710,13 @@ function resolveMatchSubRules(target: any) {
     return makeRes("standard", 5, 3, 12, false, SUB_FORMAT_PRESETS.standard.label);
   }
   const explicit = normalizeSubFormatCode(target?.friendlySubFormat || target?.subFormat);
-  if (explicit !== "auto" && SUB_FORMAT_PRESETS[explicit]) {
-    const p = SUB_FORMAT_PRESETS[explicit];
-    return makeRes(p.mode, p.maxSubs, p.maxWindows, p.maxBench, explicit !== "standard", p.label);
+  if (explicit !== "auto") {
+    const parsed = parseSubFormatPair(explicit);
+    if (parsed) {
+      const presetLabel = SUB_FORMAT_PRESETS[explicit]?.label;
+      const isCust = !(parsed.maxSubs === 5 && parsed.maxWindows === 3);
+      return makeRes(parsed.mode, parsed.maxSubs, parsed.maxWindows, parsed.maxSubs == null ? 25 : 12, isCust, presetLabel);
+    }
   }
   const text = String(target?.friendlyConditions || target?.conditions || target?.note || "")
     .toLowerCase()
@@ -654,27 +732,27 @@ function resolveMatchSubRules(target: any) {
   const numWinMatch = text.match(/(?:до|максимум|в)?\s*(\d{1,2})\s*(?:окн[ао]?|окон|слот[аов]*)/i);
 
   if (unlimSubsRe.test(text) || (genericUnlimRe.test(text) && !numSubMatch && !noSubsRe.test(text) && !/только\s+по\s+окнам/i.test(text))) {
-    const win = numWinMatch ? clamp(Number(numWinMatch[1]), 1, 25) : null;
-    return makeRes("unlimited", null, win, 25, true);
+    const win = numWinMatch ? clamp(Number(numWinMatch[1]), 1, 30) : null;
+    return makeRes(win == null ? "unlimited" : `unlim_${win}`, null, win, 25, true);
   }
   if (noSubsRe.test(text)) {
     return makeRes("none", 0, 0, 12, true, "без замен");
   }
   if (numSubMatch) {
-    const maxSubs = clamp(Number(numSubMatch[1]), 0, 25);
+    const maxSubs = clamp(Number(numSubMatch[1]), 0, 30);
     const maxWindows = unlimWinRe.test(text)
       ? null
       : numWinMatch
-        ? clamp(Number(numWinMatch[1]), 1, 25)
+        ? clamp(Number(numWinMatch[1]), 1, 30)
         : (maxSubs === 0 ? 0 : (maxSubs > 5 ? null : Math.min(3, maxSubs)));
-    const maxBench = maxSubs > 5 ? Math.min(25, Math.max(15, maxSubs + 5)) : 12;
+    const maxBench = maxSubs > 5 ? Math.min(30, Math.max(15, maxSubs + 5)) : 12;
     const isCustom = maxSubs !== 5 || maxWindows !== 3;
-    return makeRes(isCustom ? "custom" : "standard", maxSubs, maxWindows, maxBench, isCustom);
+    return makeRes(isCustom ? (maxWindows == null ? `${maxSubs}_free` : `${maxSubs}_${maxWindows}`) : "standard", maxSubs, maxWindows, maxBench, isCustom);
   }
   if (unlimWinRe.test(text) || numWinMatch) {
-    const maxWindows = unlimWinRe.test(text) ? null : clamp(Number(numWinMatch![1]), 1, 25);
+    const maxWindows = unlimWinRe.test(text) ? null : clamp(Number(numWinMatch![1]), 1, 30);
     const isCustom = maxWindows !== 3;
-    return makeRes(isCustom ? "custom" : "standard", 5, maxWindows, 12, isCustom);
+    return makeRes(isCustom ? (maxWindows == null ? "5_free" : `5_${maxWindows}`) : "standard", 5, maxWindows, 12, isCustom);
   }
   return makeRes("standard", 5, 3, 12, false, SUB_FORMAT_PRESETS.standard.label);
 }
@@ -685,31 +763,62 @@ const MATCH_FORMAT_PRESETS: Record<string, {
   label: string;
 }> = {
   standard: { mode: "2x45", periodsCount: 2, periodMinutes: 45, label: "2 тайма по 45 мин (90 мин)" },
+  "2x60": { mode: "2x60", periodsCount: 2, periodMinutes: 60, label: "2 тайма по 60 мин (120 мин)" },
+  "2x50": { mode: "2x50", periodsCount: 2, periodMinutes: 50, label: "2 тайма по 50 мин (100 мин)" },
   "2x45": { mode: "2x45", periodsCount: 2, periodMinutes: 45, label: "2 тайма по 45 мин (90 мин)" },
   "2x40": { mode: "2x40", periodsCount: 2, periodMinutes: 40, label: "2 тайма по 40 мин (80 мин)" },
   "2x35": { mode: "2x35", periodsCount: 2, periodMinutes: 35, label: "2 тайма по 35 мин (70 мин)" },
   "2x30": { mode: "2x30", periodsCount: 2, periodMinutes: 30, label: "2 тайма по 30 мин (60 мин)" },
   "2x25": { mode: "2x25", periodsCount: 2, periodMinutes: 25, label: "2 тайма по 25 мин (50 мин)" },
   "2x20": { mode: "2x20", periodsCount: 2, periodMinutes: 20, label: "2 тайма по 20 мин (40 мин)" },
-  "3x30": { mode: "3x30", periodsCount: 3, periodMinutes: 30, label: "3 тайма по 30 мин (90 мин)" },
-  "3x35": { mode: "3x35", periodsCount: 3, periodMinutes: 35, label: "3 тайма по 35 мин (105 мин)" },
-  "3x40": { mode: "3x40", periodsCount: 3, periodMinutes: 40, label: "3 тайма по 40 мин (120 мин)" },
+  "2x15": { mode: "2x15", periodsCount: 2, periodMinutes: 15, label: "2 тайма по 15 мин (30 мин)" },
+  "2x10": { mode: "2x10", periodsCount: 2, periodMinutes: 10, label: "2 тайма по 10 мин (20 мин)" },
   "3x45": { mode: "3x45", periodsCount: 3, periodMinutes: 45, label: "3 тайма по 45 мин (135 мин)" },
+  "3x40": { mode: "3x40", periodsCount: 3, periodMinutes: 40, label: "3 тайма по 40 мин (120 мин)" },
+  "3x35": { mode: "3x35", periodsCount: 3, periodMinutes: 35, label: "3 тайма по 35 мин (105 мин)" },
+  "3x30": { mode: "3x30", periodsCount: 3, periodMinutes: 30, label: "3 тайма по 30 мин (90 мин)" },
+  "3x25": { mode: "3x25", periodsCount: 3, periodMinutes: 25, label: "3 тайма по 25 мин (75 мин)" },
+  "3x20": { mode: "3x20", periodsCount: 3, periodMinutes: 20, label: "3 тайма по 20 мин (60 мин)" },
+  "3x15": { mode: "3x15", periodsCount: 3, periodMinutes: 15, label: "3 тайма по 15 мин (45 мин)" },
+  "4x30": { mode: "4x30", periodsCount: 4, periodMinutes: 30, label: "4 тайма по 30 мин (120 мин)" },
   "4x25": { mode: "4x25", periodsCount: 4, periodMinutes: 25, label: "4 тайма по 25 мин (100 мин)" },
+  "4x20": { mode: "4x20", periodsCount: 4, periodMinutes: 20, label: "4 тайма по 20 мин (80 мин)" },
+  "4x15": { mode: "4x15", periodsCount: 4, periodMinutes: 15, label: "4 тайма по 15 мин (60 мин)" },
+  "1x90": { mode: "1x90", periodsCount: 1, periodMinutes: 90, label: "1 тайм · 90 мин (без перерыва)" },
+  "1x60": { mode: "1x60", periodsCount: 1, periodMinutes: 60, label: "1 тайм · 60 мин (без перерыва)" },
   "1x45": { mode: "1x45", periodsCount: 1, periodMinutes: 45, label: "1 тайм · 45 мин (без перерыва)" },
-  "1x60": { mode: "1x60", periodsCount: 1, periodMinutes: 60, label: "1 тайм · 60 мин (без перерыва)" }
+  "1x30": { mode: "1x30", periodsCount: 1, periodMinutes: 30, label: "1 тайм · 30 мин (без перерыва)" },
+  "1x20": { mode: "1x20", periodsCount: 1, periodMinutes: 20, label: "1 тайм · 20 мин (без перерыва)" }
 };
 function normalizeMatchFormatCode(raw: any): string {
+  if (raw && typeof raw === "object") {
+    const pc = clamp(Math.round(Number(raw.periodsCount ?? raw.periods ?? 2) || 2), 1, 6);
+    const maxPm = Math.min(90, Math.max(5, Math.floor(240 / pc)));
+    const pm = clamp(Math.round(Number(raw.periodMinutes ?? raw.minutes ?? 45) || 45), 5, maxPm);
+    return `${pc}x${pm}`;
+  }
   const s = String(raw || "").trim().toLowerCase().replace(/х/g, "x");
   if (!s || s === "auto") return "auto";
   if (MATCH_FORMAT_PRESETS[s]) return MATCH_FORMAT_PRESETS[s].mode;
-  const m = s.match(/^(\d)x(\d{1,2})$/);
+  const m = s.match(/^([1-6])x(\d{1,3})$/);
   if (m) {
-    const pc = clamp(Number(m[1]), 1, 4);
-    const pm = clamp(Number(m[2]), 10, 60);
+    const pc = clamp(Number(m[1]), 1, 6);
+    const maxPm = Math.min(90, Math.max(5, Math.floor(240 / pc)));
+    const pm = clamp(Number(m[2]), 5, maxPm);
     return `${pc}x${pm}`;
   }
   return "auto";
+}
+function parseFriendlyMatchFormatInput(b: any): string {
+  if (!b || typeof b !== "object") return "auto";
+  const rawCode = String(b.matchFormat || "").trim().toLowerCase();
+  if (rawCode === "custom") {
+    return normalizeMatchFormatCode({
+      periodsCount: b.customPeriods ?? b.periodsCount,
+      periodMinutes: b.customPeriodMinutes ?? b.periodMinutes
+    });
+  }
+  return normalizeMatchFormatCode(b.matchFormat);
 }
 function formatMatchFormatLabel(periodsCount: number, periodMinutes: number) {
   const total = periodsCount * periodMinutes;
@@ -719,8 +828,9 @@ function formatMatchFormatLabel(periodsCount: number, periodMinutes: number) {
 }
 function resolveMatchFormat(target: any) {
   const makeFmt = (periodsCount: number, periodMinutes: number, isCustom: boolean) => {
-    const pc = clamp(Math.round(periodsCount), 1, 4);
-    const pm = clamp(Math.round(periodMinutes), 10, 60);
+    const pc = clamp(Math.round(periodsCount), 1, 6);
+    const maxPm = Math.min(90, Math.max(5, Math.floor(240 / pc)));
+    const pm = clamp(Math.round(periodMinutes), 5, maxPm);
     const totalMinutes = pc * pm;
     const periodStarts: number[] = [];
     const breakMinutes: number[] = [];
@@ -757,7 +867,7 @@ function resolveMatchFormat(target: any) {
   }
   const explicit = normalizeMatchFormatCode(target?.friendlyMatchFormat || target?.matchFormat);
   if (explicit !== "auto") {
-    const m = explicit.match(/^(\d)x(\d{1,2})$/);
+    const m = explicit.match(/^([1-6])x(\d{1,3})$/);
     if (m) {
       const pc = Number(m[1]), pm = Number(m[2]);
       return makeFmt(pc, pm, !(pc === 2 && pm === 45));
@@ -767,24 +877,78 @@ function resolveMatchFormat(target: any) {
     .toLowerCase()
     .replace(/ё/g, "е");
   if (!text) return makeFmt(2, 45, false);
-  const nxmMatch = text.match(/\b([1-4])\s*[xх*]\s*(\d{2})\b/);
+  const nxmMatch = text.match(/\b([1-6])\s*[xх*]\s*(\d{1,3})\b/);
   if (nxmMatch) {
     const pc = Number(nxmMatch[1]);
-    const pm = clamp(Number(nxmMatch[2]), 10, 60);
+    const maxPm = Math.min(90, Math.max(5, Math.floor(240 / pc)));
+    const pm = clamp(Number(nxmMatch[2]), 5, maxPm);
     return makeFmt(pc, pm, !(pc === 2 && pm === 45));
   }
-  const halvesMatch = text.match(/\b([1-4])\s*(?:тайм(?:а|ов)?|период(?:а|ов)?|отрез(?:ок|ка|ков)|по)\s*(?:по\s+)?(\d{2})\s*(?:мин(?:ут[аы]?)?|')?/);
+  const halvesMatch = text.match(/\b([1-6])\s*(?:тайм(?:а|ов)?|период(?:а|ов)?|четверт(?:ь|и|ей)?|отрез(?:ок|ка|ков)|по)\s*(?:по\s+)?(\d{1,3})\s*(?:мин(?:ут[аы]?)?|')?/);
   if (halvesMatch) {
     const pc = Number(halvesMatch[1]);
-    const pm = clamp(Number(halvesMatch[2]), 10, 60);
+    const maxPm = Math.min(90, Math.max(5, Math.floor(240 / pc)));
+    const pm = clamp(Number(halvesMatch[2]), 5, maxPm);
     return makeFmt(pc, pm, !(pc === 2 && pm === 45));
   }
-  const singleMatch = text.match(/(?:без\s+перерыва|одним?\s+тайм(?:ом)?)\s*(?:на\s+|по\s+)?(\d{2})\s*(?:мин|')?/);
+  const singleMatch = text.match(/(?:без\s+перерыва|одним?\s+тайм(?:ом)?)\s*(?:на\s+|по\s+)?(\d{1,3})\s*(?:мин|')?/);
   if (singleMatch) {
-    const pm = clamp(Number(singleMatch[1]), 15, 60);
+    const pm = clamp(Number(singleMatch[1]), 5, 90);
     return makeFmt(1, pm, true);
   }
   return makeFmt(2, 45, false);
+}
+function normalizeVarMode(raw: any): "auto" | "on" | "off" {
+  if (raw === true) return "on";
+  if (raw === false) return "off";
+  const s = String(raw || "").trim().toLowerCase();
+  if (s === "on" || s === "true" || s === "1" || s === "yes" || s === "enable" || s === "enabled") return "on";
+  if (s === "off" || s === "false" || s === "0" || s === "no" || s === "disable" || s === "disabled") return "off";
+  return "auto";
+}
+function resolveMatchVarRule(target: any) {
+  const makeVar = (mode: "auto" | "on" | "off", enabled: boolean, isCustom: boolean) => ({
+    mode,
+    enabled,
+    isCustom,
+    label: enabled ? "С системой VAR (включён)" : "Без VAR (выключен)",
+    shortLabel: enabled ? "VAR вкл." : "Без VAR"
+  });
+  if (target && typeof target.varEnabled === "boolean") {
+    return makeVar(target.varEnabled ? "on" : "off", target.varEnabled, true);
+  }
+  const comp = String(target?.comp || "").trim().toLowerCase();
+  const isFriendlyLike = comp === FRIENDLY_COMP || comp === "friendly" || comp === "intra_squad" || !!target?.intraSquad || !!target?.friendlyId || (!comp && target && ("conditions" in target || "varMode" in target || "friendlyVarMode" in target));
+  if (isFriendlyLike) {
+    const explicit = normalizeVarMode(target?.friendlyVarMode ?? target?.varMode);
+    if (explicit === "on") return makeVar("on", true, true);
+    if (explicit === "off") return makeVar("off", false, false);
+    const text = String(target?.friendlyConditions || target?.conditions || target?.note || "")
+      .toLowerCase()
+      .replace(/ё/g, "е");
+    if (/(?:без\s+(?:системы\s+)?(?:вар|var)|(?:вар|var)\s*(?:выкл|откл|нет|не\s+нуж)|отключить\s+(?:вар|var))/i.test(text)) {
+      return makeVar("off", false, false);
+    }
+    if (/(?:с\s+(?:системой\s+)?(?:вар|var)|(?:вар|var)\s*(?:вкл|да|есть|работает)|включить\s+(?:вар|var)|подключить\s+(?:вар|var))/i.test(text)) {
+      return makeVar("on", true, true);
+    }
+    return makeVar("off", false, false);
+  }
+  const c = comp;
+  if (c === "rpl" || c === "supercup" || c === "playoff" || c === "playoff_rpl_fnl") return makeVar("on", true, false);
+  if (c === "cup") {
+    const cp = target?.cupPath || (Number(target?.round) <= 6 ? "rpl_group" : "regions_qual");
+    if (cp === "regions_qual") {
+      const qr = Number(target?.qualRound || (Number(target?.round) > 100 && Number(target?.round) < 200 ? Number(target?.round) - 100 : target?.round) || 1);
+      return makeVar(qr >= 7 ? "on" : "off", qr >= 7, false);
+    }
+    if (!target?.cupPath && !target?.cupStage && target?.qualRound) {
+      const en = Number(target.qualRound) >= 7;
+      return makeVar(en ? "on" : "off", en, false);
+    }
+    return makeVar("on", true, false);
+  }
+  return makeVar("off", false, false);
 }
 function buildMatchFormatPeriods(mf: ReturnType<typeof resolveMatchFormat>, sixChunks = false): Array<[number, number]> {
   const periods: Array<[number, number]> = [];
@@ -793,11 +957,12 @@ function buildMatchFormatPeriods(mf: ReturnType<typeof resolveMatchFormat>, sixC
   for (let p = 0; p < pc; p++) {
     const pStart = p * pm + 1;
     const pEnd = (p + 1) * pm;
-    if (!sixChunks || pm < 24) {
+    const forceSplit = pm >= 55;
+    if ((!sixChunks || pm < 24) && !forceSplit) {
       periods.push([pStart, pEnd]);
       continue;
     }
-    const subCnt = pm >= 36 ? 3 : 2;
+    const subCnt = pm >= 70 ? 3 : (sixChunks && pm >= 36 ? 3 : 2);
     let cur = pStart;
     for (let s = 0; s < subCnt; s++) {
       const sEnd = s === subCnt - 1 ? pEnd : pStart + Math.round(((s + 1) * pm) / subCnt) - 1;
@@ -811,8 +976,8 @@ function normalizePlannedSubs(rawSubs: any, starters: string[], bench: string[],
   if (!Array.isArray(rawSubs) || !starters.length || !bench.length) return [];
   const maxSubs = opts && "maxSubs" in opts ? opts.maxSubs : 5;
   if (maxSubs === 0) return [];
-  const maxMin = clamp(Math.round(Number(opts?.maxMinute) || 90), 15, 180);
-  const defMin = Math.min(65, Math.max(1, maxMin - 5));
+  const maxMin = clamp(Math.round(Number(opts?.maxMinute) || 90), 5, 240);
+  const defMin = Math.min(65, Math.max(1, maxMin - Math.max(1, Math.round(maxMin * 0.1))));
   const starterSet = new Set(starters);
   const benchSet = new Set(bench);
   const items = rawSubs
@@ -919,7 +1084,7 @@ function computeMatchRatings(match, fixture, homeName, awayName) {
     return Number.isFinite(em) && em > mx ? em : mx;
   }, 0);
 
-  const schedMin = Math.max(15, Number(ctx?.matchFormat?.totalMinutes || resolveMatchFormat(fixture).totalMinutes || 90));
+  const schedMin = Math.max(5, Number(ctx?.matchFormat?.totalMinutes || resolveMatchFormat(fixture).totalMinutes || 90));
   const ratings: any[] = [];
   for (const pid of candidateIds) {
     const ps = pStatsMap[pid] || {};
@@ -7990,7 +8155,11 @@ function isRefereeManagedComp(f) {
 }
 function fixtureSupportsVar(f) {
   if (!f) return false;
+  if (typeof f.varEnabled === "boolean") return f.varEnabled;
   const c = String(f.comp || "");
+  if (c === FRIENDLY_COMP || c === "friendly" || c === "intra_squad" || !!f.intraSquad || !!f.friendlyId || f.friendlyVarMode || f.varMode) {
+    return resolveMatchVarRule(f).enabled;
+  }
   if (c === "rpl" || c === "supercup" || c === "playoff" || c === "playoff_rpl_fnl") return true;
   if (c === "cup") {
     const cp = f.cupPath || (Number(f.round) <= 6 ? "rpl_group" : "regions_qual");
@@ -9473,6 +9642,8 @@ function ensureApprovedFriendlyFixtures() {
         friendlyConditions: r.conditions,
         friendlySubFormat: r.subFormat || void 0,
         friendlyMatchFormat: r.matchFormat || void 0,
+        friendlyVarMode: r.varMode || void 0,
+        varEnabled: resolveMatchVarRule(r).enabled,
         nationalType: r.nationalType || void 0,
         neutralField: place.neutral,
         stadium: place.neutral ? `${place.stadium} (нейтральное поле${place.city ? ", г. " + place.city : ""})` : place.stadium,
@@ -13325,6 +13496,7 @@ async function buildCtx(f) {
     legionLimitBySide: { home: limHome?.onPitch ?? null, away: limAway?.onPitch ?? null },
     subRules: resolveMatchSubRules(f),
     matchFormat: resolveMatchFormat(f),
+    varRule: resolveMatchVarRule(f),
     friendlyConditions: f.friendlyConditions || f.note || ""
   };
   const H = team(f.home), A = team(f.away);
@@ -13684,6 +13856,10 @@ function buildUser(ctx, a, b, st, issues, mode = "full") {
   }
   if (sr.isCustom || ctx.compId === FRIENDLY_COMP || ctx.intraSquad) {
     u += `ФОРМАТ ЗАМЕН МАТЧА: ${sr.promptSummary}${ctx.friendlyConditions ? ` | Условия: ${ctx.friendlyConditions}` : ""}
+`;
+  }
+  if (ctx.compId === FRIENDLY_COMP || ctx.intraSquad || ctx.varRule?.isCustom) {
+    u += `СИСТЕМА VAR В МАТЧЕ: ${supportsVar ? "ВКЛЮЧЕНА (используются видеоповторы VAR при спорных моментах)" : "ВЫКЛЮЧЕНА (матч проходит БЕЗ системы VAR)"}
 `;
   }
   if (st) {
@@ -15479,7 +15655,7 @@ function computeLightMatchProfile(ctx: any) {
   const tilt = (lightRand() - 0.5) * 0.38;
 
   const mf = ctx?.matchFormat || resolveMatchFormat({});
-  const durFactor = clamp((mf.totalMinutes || 90) / 90, 0.35, 1.55);
+  const durFactor = clamp((mf.totalMinutes || 90) / 90, 0.15, 2.0);
   const baseLambdaH = clamp((1.16 + powDiff * 0.09 + attEdgeH + homeEdge + tilt) * tempoMod * durFactor, 0.25, 4.2);
   const baseLambdaA = clamp((1.08 - powDiff * 0.09 + attEdgeA - (homeEdge * 0.35) - tilt) * tempoMod * durFactor, 0.2, 4.0);
 
@@ -15782,7 +15958,7 @@ function applyMatchEnergyToStats(st, m, f) {
   const wd = f?.weatherDetails || {};
   const temp = Number(wd?.temp);
   const weatherMod = (Number.isFinite(temp) && temp >= 27 ? 3 : 0) + (wd?.pitch === "heavy" || wd?.condition === "rain" || wd?.condition === "snow" ? 2.5 : 0);
-  const schedMin = Math.max(15, Number(ctx?.matchFormat?.totalMinutes || resolveMatchFormat(f).totalMinutes || 90));
+  const schedMin = Math.max(5, Number(ctx?.matchFormat?.totalMinutes || resolveMatchFormat(f).totalMinutes || 90));
   for (const [pid, ps] of Object.entries(st.players) as any[]) {
     if (!ps || !(ps.min > 0)) continue;
     const pos = String(ctx?.pos?.[pid] || player(pid)?.pos || "").trim();
@@ -15839,7 +16015,7 @@ function computeStats(events, ctx, opts: any = null) {
     }
     if (ev?.type === "kickoff") hasStarted = true;
   }
-  const schedMin = Math.max(10, Number(ctx?.matchFormat?.totalMinutes || 90));
+  const schedMin = Math.max(5, Number(ctx?.matchFormat?.totalMinutes || 90));
   const lastMin = ftEv
     ? Math.max(schedMin, Number(ftEv.min) || schedMin)
     : isFinal
@@ -20417,6 +20593,9 @@ var pubFx = (f) => {
     subRules: resolveMatchSubRules(f),
     friendlyMatchFormat: f.friendlyMatchFormat || null,
     matchFormat: resolveMatchFormat(f),
+    friendlyVarMode: f.friendlyVarMode || null,
+    varEnabled: typeof f.varEnabled === "boolean" ? f.varEnabled : null,
+    varInfo: resolveMatchVarRule(f),
     comp: f.comp,
     season: f.season || S(),
     cupPath: f.cupPath || (f.comp === "cup" && f.round != null ? Number(f.round) <= 6 ? "rpl_group" : "regions_qual" : null),
@@ -27888,6 +28067,21 @@ app.post("/api/admin/fixture", admin, (req, res) => {
   if (req.body.neutralField !== void 0) {
     f.neutralField = !!req.body.neutralField;
   }
+  if (req.body.varEnabled !== void 0 && f.status === "scheduled") {
+    if (req.body.varEnabled === null || req.body.varEnabled === "auto") {
+      delete f.varEnabled;
+      delete f.friendlyVarMode;
+    } else {
+      f.varEnabled = !!req.body.varEnabled;
+      if (f.comp === FRIENDLY_COMP || isIntraSquad(f)) {
+        f.friendlyVarMode = f.varEnabled ? "on" : "off";
+      }
+      if (!f.varEnabled) {
+        delete f.varReferee;
+        delete f.avarReferee;
+      }
+    }
+  }
   const linkedNtSched = findLinkedNationalMatchByFixture(f);
   if (linkedNtSched) {
     linkedNtSched.m.date = f.gameDate || f.date;
@@ -28962,6 +29156,17 @@ app.post("/api/admin/fixture/referee", admin, async (req, res) => {
   }
 
   const nextReserve = b.reserveReferee !== undefined ? (String(b.reserveReferee || "").trim() || null) : (f.reserveReferee || null);
+  if (b.varEnabled !== void 0 && f.status === "scheduled") {
+    if (b.varEnabled === null || b.varEnabled === "auto") {
+      delete f.varEnabled;
+      delete f.friendlyVarMode;
+    } else {
+      f.varEnabled = !!b.varEnabled;
+      if (f.comp === FRIENDLY_COMP || isIntraSquad(f)) {
+        f.friendlyVarMode = f.varEnabled ? "on" : "off";
+      }
+    }
+  }
   const supportsVar = fixtureSupportsVar(f);
   const nextVar = supportsVar ? (b.varReferee !== undefined ? (String(b.varReferee || "").trim() || null) : (f.varReferee || null)) : null;
   const nextAvar = supportsVar ? (b.avarReferee !== undefined ? (String(b.avarReferee || "").trim() || null) : (f.avarReferee || null)) : null;
@@ -28997,6 +29202,8 @@ app.post("/api/admin/fixture/referee", admin, async (req, res) => {
 
   const cachedMatch = await ensureMatch(f.id);
   if (cachedMatch && cachedMatch.ctx) {
+    cachedMatch.ctx.supportsVar = supportsVar;
+    cachedMatch.ctx.varRule = resolveMatchVarRule(f);
     const headRefObj = (db.referees || []).find((r) => r.id === f.refereeId || r.name === f.refereeName) || (f.refereeName ? {
       name: f.refereeName,
       city: "\u0420\u043E\u0441\u0441\u0438\u044F",
@@ -29007,10 +29214,10 @@ app.post("/api/admin/fixture/referee", admin, async (req, res) => {
       reds: 0,
       penalties: 0
     } : null);
-    const varRefObj = (db.referees || []).find((r) => r.name === f.varReferee) || (f.varReferee ? {
+    const varRefObj = supportsVar ? ((db.referees || []).find((r) => r.name === f.varReferee) || (f.varReferee ? {
       name: f.varReferee,
       bio: `\u0410\u0440\u0431\u0438\u0442\u0440 VAR \u2014 ${f.varReferee}`
-    } : null);
+    } : null)) : null;
     cachedMatch.ctx.refereeCrew = {
       ...(cachedMatch.ctx.refereeCrew || {}),
       head: headRefObj,
@@ -29018,9 +29225,9 @@ app.post("/api/admin/fixture/referee", admin, async (req, res) => {
       asst1: f.assistants[0] || "\u0414\u043C\u0438\u0442\u0440\u0438\u0439 \u041C\u043E\u0441\u044F\u043A\u0438\u043D",
       asst2: f.assistants[1] || "\u0412\u0430\u043B\u0435\u043D\u0442\u0438\u043D \u041C\u0443\u0440\u0430\u0448\u043E\u0432",
       fourth: f.reserveReferee || "\u0412\u0435\u0440\u0430 \u041E\u043F\u0435\u0439\u043A\u0438\u043D\u0430",
-      var: f.varReferee || null,
+      var: supportsVar ? (f.varReferee || null) : null,
       varProfile: varRefObj,
-      avar: f.avarReferee || null
+      avar: supportsVar ? (f.avarReferee || null) : null
     };
     putMatch(f.id, cachedMatch);
   }
@@ -30356,6 +30563,8 @@ var pubFriendly = (r) => {
     subRules: resolveMatchSubRules(r),
     matchFormat: r.matchFormat || "auto",
     matchFormatInfo: resolveMatchFormat(r),
+    varMode: r.varMode || "auto",
+    varInfo: resolveMatchVarRule(r),
     budget: r.budget,
     formattedBudget: isIntra ? "Бесплатный спарринг" : fmtEuro(r.budget),
     nationalType: r.nationalType || "",
@@ -30478,6 +30687,8 @@ function tryFinalizeFriendly(r) {
     friendlyConditions: r.conditions,
     friendlySubFormat: r.subFormat || void 0,
     friendlyMatchFormat: r.matchFormat || void 0,
+    friendlyVarMode: r.varMode || void 0,
+    varEnabled: resolveMatchVarRule(r).enabled,
     nationalType: r.nationalType || void 0,
     neutralField: place.neutral,
     stadium: place.neutral ? `${place.stadium} (\u043D\u0435\u0439\u0442\u0440\u0430\u043B\u044C\u043D\u043E\u0435 \u043F\u043E\u043B\u0435${place.city ? ", \u0433. " + place.city : ""})` : place.stadium,
@@ -30503,14 +30714,16 @@ function tryFinalizeFriendly(r) {
   try {
     const sr = resolveMatchSubRules(f);
     const mf = resolveMatchFormat(f);
+    const vr = resolveMatchVarRule(f);
     const fmtLine = mf.isCustom ? `\n⏱ Формат матча: <b>${esc(mf.label)}</b>` : "";
     const subFmtLine = sr.isCustom ? `\n🔄 Замены: <b>${esc(sr.label)}</b>` : "";
+    const varLine = `\n📺 VAR: <b>${esc(vr.shortLabel)}</b>`;
     if (isIntra) {
       tg(`⚽ <b>Внутрикомандный спарринг назначен</b>
 «${esc(sideDisplayName(f, "home"))}» — «${esc(sideDisplayName(f, "away"))}»
 🎮 Игровое: <b>${esc(gameDate)} ${esc(gameTime)}</b>
 ⏰ Настоящее: <b>${esc(realDate)} ${esc(realTime)} МСК</b>
-🏟 ${esc(place.stadium)}${fmtLine}${subFmtLine}
+🏟 ${esc(place.stadium)}${fmtLine}${subFmtLine}${varLine}
 <i>${esc(r.conditions)}</i>`);
     } else {
       tg(`\u{1F91D} <b>\u0422\u043E\u0432\u0430\u0440\u0438\u0449\u0435\u0441\u043A\u0438\u0439 \u043C\u0430\u0442\u0447 \u0441\u043E\u0433\u043B\u0430\u0441\u043E\u0432\u0430\u043D</b>
@@ -30518,7 +30731,7 @@ function tryFinalizeFriendly(r) {
 \u{1F3AE} \u0418\u0433\u0440\u043E\u0432\u043E\u0435: <b>${esc(gameDate)} ${esc(gameTime)}</b>
 \u23F0 \u041D\u0430\u0441\u0442\u043E\u044F\u0449\u0435\u0435: <b>${esc(realDate)} ${esc(realTime)} \u041C\u0421\u041A</b>
 \u{1F3DF} ${esc(place.stadium)}
-\u{1F4B6} \u0411\u044E\u0434\u0436\u0435\u0442 \u043C\u0430\u0442\u0447\u0430: <b>${esc(fmtEuro(budget))}</b>${fmtLine}${subFmtLine}
+\u{1F4B6} \u0411\u044E\u0434\u0436\u0435\u0442 \u043C\u0430\u0442\u0447\u0430: <b>${esc(fmtEuro(budget))}</b>${fmtLine}${subFmtLine}${varLine}
 <i>${esc(r.conditions)}</i>`);
     }
   } catch {
@@ -30611,8 +30824,9 @@ app.post("/api/club/friendly/intra/request", needClub, (req, res) => {
   const actorInfo = resolveActor(req);
   const frAdCheck = checkAndConsumeFriendlyRequestAd(db, A.id, matchedBreak.id, actorInfo.actorKey, b.adProof);
   if (!frAdCheck.ok) return fail(res, frAdCheck.error);
-  const subFormat = normalizeSubFormatCode(b.subFormat);
-  const matchFormat = normalizeMatchFormatCode(b.matchFormat);
+  const subFormat = parseFriendlySubFormatInput(b);
+  const matchFormat = parseFriendlyMatchFormatInput(b);
+  const varMode = normalizeVarMode(b.varMode);
   const conditions = cleanTxt(b.conditions, 500) || `Внутрикомандный спарринг: ${homeLabel} против ${awayLabel}`;
   const r = {
     id: "fr_" + uid(),
@@ -30633,6 +30847,7 @@ app.post("/api/club/friendly/intra/request", needClub, (req, res) => {
     conditions,
     subFormat,
     matchFormat,
+    varMode,
     budget: 0,
     needOpponentApproval: false,
     opponentApproval: "not_required",
@@ -30646,13 +30861,15 @@ app.post("/api/club/friendly/intra/request", needClub, (req, res) => {
   try {
     const sr = resolveMatchSubRules(r);
     const mf = resolveMatchFormat(r);
+    const vr = resolveMatchVarRule(r);
     const fmtLine = mf.isCustom ? `\n⏱ Формат матча: <b>${esc(mf.label)}</b>` : "";
     const subFmtLine = sr.isCustom ? `\n🔄 Замены: <b>${esc(sr.label)}</b>` : "";
+    const varLine = `\n📺 VAR: <b>${esc(vr.shortLabel)}</b>`;
     tg(`⚽ <b>Заявка на внутрикомандный спарринг</b>
 «${esc(A.name)} (${esc(homeLabel)})» — «${esc(A.name)} (${esc(awayLabel)})»
 🎮 Игровое: <b>${esc(gameDate)} ${esc(gameTime)}</b>
 ⏰ Настоящее: <b>${esc(realDate)} ${esc(realTime)} МСК</b>
-🏟 ${esc(friendlyPlace(r).stadium)}${fmtLine}${subFmtLine}
+🏟 ${esc(friendlyPlace(r).stadium)}${fmtLine}${subFmtLine}${varLine}
 <i>${esc(conditions)}</i>
 Требуется решение администратора.`);
   } catch {
@@ -30726,8 +30943,9 @@ app.post("/api/club/friendly/request", needClub, (req, res) => {
   let realTime = String(b.realTime || "19:00").trim();
   if (!/^\d{1,2}:\d{2}$/.test(realTime)) return fail(res, "\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u043E\u0435 \u043D\u0430\u0441\u0442\u043E\u044F\u0449\u0435\u0435 (\u0440\u0435\u0430\u043B\u044C\u043D\u043E\u0435) \u0432\u0440\u0435\u043C\u044F \u043C\u0430\u0442\u0447\u0430");
   if (realTime.length === 4) realTime = "0" + realTime;
-  const subFormat = normalizeSubFormatCode(b.subFormat);
-  const matchFormat = normalizeMatchFormatCode(b.matchFormat);
+  const subFormat = parseFriendlySubFormatInput(b);
+  const matchFormat = parseFriendlyMatchFormatInput(b);
+  const varMode = normalizeVarMode(b.varMode);
   const conditions = cleanTxt(b.conditions, 500);
   if (conditions.length < 3) return fail(res, "\u041F\u0440\u043E\u043F\u0438\u0448\u0438\u0442\u0435 \u0443\u0441\u043B\u043E\u0432\u0438\u044F \u043C\u0430\u0442\u0447\u0430");
   const budget = Math.round(Number(b.budget));
@@ -30756,6 +30974,7 @@ app.post("/api/club/friendly/request", needClub, (req, res) => {
     conditions,
     subFormat,
     matchFormat,
+    varMode,
     budget,
     needOpponentApproval: needClub2,
     opponentApproval: needClub2 ? "pending" : "not_required",
@@ -30769,14 +30988,16 @@ app.post("/api/club/friendly/request", needClub, (req, res) => {
   try {
     const sr = resolveMatchSubRules(r);
     const mf = resolveMatchFormat(r);
+    const vr = resolveMatchVarRule(r);
     const fmtLine = mf.isCustom ? `\n⏱ Формат матча: <b>${esc(mf.label)}</b>` : "";
     const subFmtLine = sr.isCustom ? `\n🔄 Замены: <b>${esc(sr.label)}</b>` : "";
+    const varLine = `\n📺 VAR: <b>${esc(vr.shortLabel)}</b>`;
     tg(`\u{1F91D} <b>\u0417\u0430\u044F\u0432\u043A\u0430 \u043D\u0430 \u0442\u043E\u0432\u0430\u0440\u0438\u0449\u0435\u0441\u043A\u0438\u0439 \u043C\u0430\u0442\u0447</b>
 \xAB${esc(A.name)}\xBB \u043F\u0440\u0438\u0433\u043B\u0430\u0448\u0430\u0435\u0442 \xAB${esc(B.name)}\xBB
 \u{1F3AE} \u0418\u0433\u0440\u043E\u0432\u043E\u0435: <b>${esc(gameDate)} ${esc(gameTime)}</b>
 \u23F0 \u041D\u0430\u0441\u0442\u043E\u044F\u0449\u0435\u0435: <b>${esc(realDate)} ${esc(realTime)} \u041C\u0421\u041A</b>
 \u{1F3DF} ${esc(pubFriendly(r).venueText)}
-\u{1F4B6} \u0411\u044E\u0434\u0436\u0435\u0442: <b>${esc(fmtEuro(budget))}</b>${fmtLine}${subFmtLine}
+\u{1F4B6} \u0411\u044E\u0434\u0436\u0435\u0442: <b>${esc(fmtEuro(budget))}</b>${fmtLine}${subFmtLine}${varLine}
 <i>${esc(conditions)}</i>
 ${needClub2 ? "\u041D\u0443\u0436\u043D\u044B \u0441\u043E\u0433\u043B\u0430\u0441\u0438\u044F \u043A\u043B\u0443\u0431\u0430-\u0441\u043E\u043F\u0435\u0440\u043D\u0438\u043A\u0430 \u0438 \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430." : "\u0422\u0440\u0435\u0431\u0443\u0435\u0442\u0441\u044F \u0440\u0435\u0448\u0435\u043D\u0438\u0435 \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430."}`);
   } catch {
@@ -30821,8 +31042,9 @@ app.post("/api/club/friendly/national/request", needClub, (req, res) => {
   let realTime = String(b.realTime || "19:00").trim();
   if (!/^\d{1,2}:\d{2}$/.test(realTime)) return fail(res, "Некорректное настоящее (реальное) время матча");
   if (realTime.length === 4) realTime = "0" + realTime;
-  const subFormat = normalizeSubFormatCode(b.subFormat);
-  const matchFormat = normalizeMatchFormatCode(b.matchFormat);
+  const subFormat = parseFriendlySubFormatInput(b);
+  const matchFormat = parseFriendlyMatchFormatInput(b);
+  const varMode = normalizeVarMode(b.varMode);
   const conditions = cleanTxt(b.conditions, 500) || "Товарищеский матч со сборной России";
   if ((db.friendlyRequests ||= []).some((r2) => r2.status === "pending" && r2.clubId === A.id && r2.opponentId === B.id && (r2.gameDate || r2.date) === gameDate)) {
     return fail(res, "Такая заявка на эту игровую дату уже подана и ждёт решения");
@@ -30847,6 +31069,7 @@ app.post("/api/club/friendly/national/request", needClub, (req, res) => {
     conditions,
     subFormat,
     matchFormat,
+    varMode,
     budget: 0,
     needOpponentApproval: false,
     opponentApproval: "not_required",
@@ -30860,9 +31083,11 @@ app.post("/api/club/friendly/national/request", needClub, (req, res) => {
   try {
     const sr = resolveMatchSubRules(r);
     const mf = resolveMatchFormat(r);
+    const vr = resolveMatchVarRule(r);
     const fmtLine = mf.isCustom ? `\n⏱ Формат матча: <b>${esc(mf.label)}</b>` : "";
     const subFmtLine = sr.isCustom ? `\n🔄 Замены: <b>${esc(sr.label)}</b>` : "";
-    tgComp("national", `🇷🇺 <b>Заявка на матч со сборной</b>\n«${esc(A.name)}» — «${esc(B.name)}»\n🎮 Игровое: <b>${esc(gameDate)} ${esc(gameTime)}</b>\n⏰ Настоящее: <b>${esc(realDate)} ${esc(realTime)} МСК</b>\n📺 Оплачено просмотрами рекламы: ${NT_FRIENDLY_REQUIRED_ADS}${fmtLine}${subFmtLine}\n<i>${esc(conditions)}</i>`, { ruleKey: "transfersAndNews", kind: "nt_friendly" });
+    const varLine = `\n📺 VAR: <b>${esc(vr.shortLabel)}</b>`;
+    tgComp("national", `🇷🇺 <b>Заявка на матч со сборной</b>\n«${esc(A.name)}» — «${esc(B.name)}»\n🎮 Игровое: <b>${esc(gameDate)} ${esc(gameTime)}</b>\n⏰ Настоящее: <b>${esc(realDate)} ${esc(realTime)} МСК</b>\n📺 Оплачено просмотрами рекламы: ${NT_FRIENDLY_REQUIRED_ADS}${fmtLine}${subFmtLine}${varLine}\n<i>${esc(conditions)}</i>`, { ruleKey: "transfersAndNews", kind: "nt_friendly" });
   } catch {
   }
   res.json({ ok: 1, request: pubFriendly(r), message: `Заявка отправлена администратору. При отказе или отклонении на счёт клуба вернутся ${NT_FRIENDLY_REFUND_ADS} просмотров.`, ads: getNtFriendlyAdSummary(db, A.id) });
@@ -31855,7 +32080,7 @@ app.post("/api/admin/national/publish-telegram", admin, async (req, res) => {
       botFailed: 0,
       results: pub.results,
       current: enrichNationalBreak(nt.current, teamType),
-      message: `${modeLabel} опубликованы с афишей в Telegram (${partsDesc.join(" · ")})!`,
+      message: `${modeLabel} опубликованы в Telegram (${partsDesc.join(" · ")})!`,
     });
   }
 
