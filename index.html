@@ -4436,16 +4436,22 @@ async function pgHome(app) {
     return !f.cupPath && !f.cupStage && !!f.qualRound;
   };
 
+  const isNatFx = f => f && (f.comp === 'national' || f.comp === 'national_u21');
+  const natPool = [
+    ...allFx.filter(isNatFx),
+    ...ntFixtures
+  ];
+
   let leagueFx = fx;
   let leagueScopeTag = '';
   if (myComp === 'rpl') {
-    leagueFx = allFx.filter(f => f.comp === 'rpl' || isCupRplPath(f));
+    leagueFx = [...allFx.filter(f => f.comp === 'rpl' || isCupRplPath(f)), ...natPool];
     leagueScopeTag = 'РПЛ и Кубок (Путь РПЛ)';
   } else if (myComp === 'fnl') {
-    leagueFx = allFx.filter(f => f.comp === 'fnl' || isCupRegionsPath(f));
+    leagueFx = [...allFx.filter(f => f.comp === 'fnl' || isCupRegionsPath(f)), ...natPool];
     leagueScopeTag = 'ФНЛ и Кубок (Путь регионов)';
   } else if (myTeamId && myComp) {
-    leagueFx = allFx.filter(f => f.comp === myComp || isCupRegionsPath(f));
+    leagueFx = [...allFx.filter(f => f.comp === myComp || isCupRegionsPath(f)), ...natPool];
     leagueScopeTag = compName(myComp);
   }
 
@@ -4469,16 +4475,29 @@ async function pgHome(app) {
     if (aFuture) return ta - tb || String((a.date || '') + (a.time || '')).localeCompare(String((b.date || '') + (b.time || '')));
     return tb - ta || String((a.date || '') + (a.time || '')).localeCompare(String((b.date || '') + (b.time || '')));
   };
+  const isUpcomingStatus = f => f.status === 'scheduled' || f.status === 'queued' || f.status === 'generating';
   const teamNext = myTeamId
     ? allFx
-        .filter(f => (f.home === myTeamId || f.away === myTeamId) && (f.status === 'scheduled' || f.status === 'queued' || f.status === 'generating'))
+        .filter(f => (f.home === myTeamId || f.away === myTeamId) && isUpcomingStatus(f))
         .sort(sortUpcoming)
         .slice(0, 3)
     : [];
-  const next = leagueFx
-    .filter(f => f.status === 'scheduled' || f.status === 'queued' || f.status === 'generating')
+  const nextRegular = leagueFx
+    .filter(f => !isNatFx(f) && isUpcomingStatus(f))
     .sort(sortUpcoming)
     .slice(0, 3);
+  const nextNational = natPool
+    .filter(isUpcomingStatus)
+    .sort(sortUpcoming)
+    .slice(0, 4);
+  const nextSeen = new Set();
+  const next = [...nextRegular, ...nextNational]
+    .filter(f => {
+      if (!f?.id || nextSeen.has(f.id)) return false;
+      nextSeen.add(f.id);
+      return true;
+    })
+    .sort(sortUpcoming);
 
   const last = leagueFx
     .filter(f => f.status === 'done')
