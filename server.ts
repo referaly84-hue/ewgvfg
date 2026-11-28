@@ -904,6 +904,13 @@ function formatMatchFormatLabel(periodsCount: number, periodMinutes: number) {
   const tWord = periodsCount >= 2 && periodsCount <= 4 ? "тайма" : "таймов";
   return `${periodsCount} ${tWord} по ${periodMinutes} мин (${total} мин)`;
 }
+function stripTieBreakerClausesFromText(rawText: string) {
+  let s = String(rawText || "").toLowerCase().replace(/ё/g, "е");
+  s = s.replace(/(?:если|при|в\s+случае)\s+(?:ничь[а-я]*|ничейн[а-я]+\s+[а-я]+|равн[а-я]+\s+сч[её]т[а-я]*)\s*,?\s*(?:то\s+)?(?:(?:одп\.?|доп\.?|дополнительн[а-я]*|овертайм[а-я]*|экстра-?тайм[а-я]*|сразу\s+пенальти|сери[яию]\s+пенальти|пенальти|золот[а-я]+\s+гол|без\s+пенальти)[^,.;!\n]*)*/gi, " ");
+  s = s.replace(/(?:одп\.?|доп\.?|дополнительн[а-я]*|овертайм[а-я]*|экстра-?тайм[а-я]*)\s*(?:врем[а-я]*)?[^,.;!\n]*/gi, " ");
+  s = s.replace(/(?:сери[яию]\s+(?:послематчевых\s+)?пенальти|послематчев[а-я]*\s+пенальти|пенальти\s+в\s+любом\s+случае|по\s+\d{1,2}\s+(?:пенальти|удар[аов]*))[^,.;!\n]*/gi, " ");
+  return s.replace(/\s+/g, " ").trim();
+}
 function resolveMatchFormat(target: any) {
   const makeFmt = (periodsCount: number, periodMinutes: number, isCustom: boolean) => {
     const pc = clamp(Math.round(periodsCount), 1, 6);
@@ -951,9 +958,11 @@ function resolveMatchFormat(target: any) {
       return makeFmt(pc, pm, !(pc === 2 && pm === 45));
     }
   }
-  const text = String(target?.friendlyConditions || target?.conditions || target?.note || "")
+  const rawText = String(target?.friendlyConditions || target?.conditions || target?.note || "")
     .toLowerCase()
     .replace(/ё/g, "е");
+  if (!rawText) return makeFmt(2, 45, false);
+  const text = stripTieBreakerClausesFromText(rawText);
   if (!text) return makeFmt(2, 45, false);
   const nxmMatch = text.match(/\b([1-6])\s*[xх*]\s*(\d{1,3})\b/);
   if (nxmMatch) {
@@ -1027,6 +1036,165 @@ function resolveMatchVarRule(target: any) {
     return makeVar("on", true, false);
   }
   return makeVar("off", false, false);
+}
+type FriendlyTieBreakerMode = "auto" | "none" | "extra_then_penalties" | "extra_only" | "penalties" | "always_penalties";
+function normalizeTieBreakerMode(raw: any): FriendlyTieBreakerMode {
+  const s = String(raw || "").trim().toLowerCase();
+  if (s === "none" || s === "draw" || s === "off") return "none";
+  if (s === "extra_then_penalties" || s === "et_pen" || s === "extra_pen") return "extra_then_penalties";
+  if (s === "extra_only" || s === "et_only" || s === "extra") return "extra_only";
+  if (s === "penalties" || s === "pen" || s === "shootout") return "penalties";
+  if (s === "always_penalties" || s === "always_pen") return "always_penalties";
+  return "auto";
+}
+function parseExtraFormatCode(raw: any): { periods: number; periodMinutes: number } | null {
+  if (raw && typeof raw === "object") {
+    const pc = clamp(Math.round(Number(raw.periods ?? raw.extraPeriods ?? 2) || 2), 1, 2);
+    const pm = clamp(Math.round(Number(raw.periodMinutes ?? raw.extraPeriodMinutes ?? 15) || 15), 3, 30);
+    return { periods: pc, periodMinutes: pm };
+  }
+  const s = String(raw || "").trim().toLowerCase().replace(/х/g, "x");
+  const m = s.match(/^([12])x(\d{1,2})$/);
+  if (m) return { periods: Number(m[1]), periodMinutes: clamp(Number(m[2]), 3, 30) };
+  return null;
+}
+function parseFriendlyTieBreakerInput(b: any) {
+  if (!b || typeof b !== "object") {
+    return { tieBreakerMode: "auto" as FriendlyTieBreakerMode, extraFormat: "2x15", goldenGoal: false, shootoutKicks: 5 };
+  }
+  const mode = normalizeTieBreakerMode(b.tieBreakerMode ?? b.friendlyTieBreaker);
+  const ep = clamp(Math.round(Number(b.extraPeriods ?? b.friendlyExtraPeriods ?? 2) || 2), 1, 2);
+  const epm = clamp(Math.round(Number(b.extraPeriodMinutes ?? b.friendlyExtraPeriodMinutes ?? 15) || 15), 3, 30);
+  const parsedFromCode = parseExtraFormatCode(b.extraFormat ?? b.friendlyExtraFormat);
+  const finalEp = parsedFromCode ? parsedFromCode.periods : ep;
+  const finalEpm = parsedFromCode ? parsedFromCode.periodMinutes : epm;
+  const goldenGoal = !!(b.goldenGoal ?? b.friendlyGoldenGoal);
+  const kicksRaw = Number(b.shootoutKicks ?? b.friendlyShootoutKicks ?? 5);
+  const shootoutKicks = Number.isFinite(kicksRaw) && kicksRaw > 0 ? clamp(Math.round(kicksRaw), 1, 10) : 5;
+  return {
+    tieBreakerMode: mode,
+    extraFormat: `${finalEp}x${finalEpm}`,
+    goldenGoal,
+    shootoutKicks
+  };
+}
+function resolveMatchTieBreakerRule(target: any) {
+  const buildRule = (
+    mode: string,
+    extraPeriodsCount: number,
+    extraPeriodMinutes: number,
+    goldenGoal: boolean,
+    shootoutKicks: number,
+    isCustom: boolean
+  ) => {
+    const ep = clamp(Math.round(extraPeriodsCount || 2), 1, 2);
+    const epm = clamp(Math.round(extraPeriodMinutes || 15), 3, 30);
+    const etTotal = ep * epm;
+    const kicks = clamp(Math.round(shootoutKicks || 5), 1, 10);
+    const hasExtraTime = mode === "extra_then_penalties" || mode === "extra_only";
+    const hasShootout = mode === "extra_then_penalties" || mode === "penalties" || mode === "always_penalties";
+    const alwaysShootout = mode === "always_penalties";
+    const etFmtLabel = ep === 1 ? `1×${epm} мин` : `2×${epm} (${etTotal} мин)`;
+    const kicksNote = kicks !== 5 ? ` (по ${kicks} уд.)` : "";
+    const ggNote = goldenGoal ? " · золотой гол" : "";
+    let label = "При ничьей — ничья";
+    let shortLabel = "Ничья (без доп.)";
+    if (mode === "extra_then_penalties") {
+      label = `При ничьей — доп. время ${etFmtLabel}${ggNote}, затем пенальти${kicksNote}`;
+      shortLabel = `Доп. ${etFmtLabel}${ggNote} + пен.`;
+    } else if (mode === "extra_only") {
+      label = `При ничьей — доп. время ${etFmtLabel}${ggNote} (без пенальти)`;
+      shortLabel = `Доп. ${etFmtLabel}${ggNote}`;
+    } else if (mode === "penalties") {
+      label = `При ничьей — сразу серия пенальти${kicksNote}`;
+      shortLabel = `Сразу пенальти${kicksNote}`;
+    } else if (mode === "always_penalties") {
+      label = `После матча — серия пенальти при любом счёте${kicksNote}`;
+      shortLabel = `Пенальти всегда${kicksNote}`;
+    } else if (mode === "playoff") {
+      label = "Плей-офф (пенальти по регламенту)";
+      shortLabel = "Регламент плей-офф";
+    }
+    return {
+      mode,
+      hasExtraTime,
+      hasShootout,
+      alwaysShootout,
+      extraPeriodsCount: ep,
+      extraPeriodMinutes: epm,
+      extraTotalMinutes: etTotal,
+      extraFormatLabel: etFmtLabel,
+      goldenGoal: !!(hasExtraTime && goldenGoal),
+      shootoutKicks: kicks,
+      isCustom,
+      label,
+      shortLabel
+    };
+  };
+  if (target && target.tieBreakerRule && typeof target.tieBreakerRule === "object" && "hasExtraTime" in target.tieBreakerRule) {
+    const r = target.tieBreakerRule;
+    return buildRule(r.mode || "none", r.extraPeriodsCount, r.extraPeriodMinutes, !!r.goldenGoal, r.shootoutKicks, !!r.isCustom);
+  }
+  const comp = String(target?.comp || "").trim().toLowerCase();
+  const isFriendlyLike = comp === FRIENDLY_COMP || comp === "friendly" || comp === "intra_squad" || !!target?.intraSquad || !!target?.friendlyId || (!comp && target && ("conditions" in target || "tieBreakerMode" in target || "friendlyTieBreaker" in target));
+  if (!isFriendlyLike) {
+    if (comp === "cup" || comp === "supercup") return buildRule("penalties", 2, 15, false, 5, false);
+    if (comp === "playoff" || comp === "playoff_rpl_fnl") return buildRule("playoff", 2, 15, false, 5, false);
+    return buildRule("none", 2, 15, false, 5, false);
+  }
+  const rawText = String(target?.friendlyConditions || target?.conditions || target?.note || "")
+    .toLowerCase()
+    .replace(/ё/g, "е");
+  const explicitMode = normalizeTieBreakerMode(target?.friendlyTieBreaker ?? target?.tieBreakerMode);
+  const parsedExplicitEt = parseExtraFormatCode(target?.friendlyExtraFormat ?? target?.extraFormat);
+  let ep = parsedExplicitEt ? parsedExplicitEt.periods : (target?.extraPeriods ? clamp(Number(target.extraPeriods), 1, 2) : 2);
+  let epm = parsedExplicitEt ? parsedExplicitEt.periodMinutes : (target?.extraPeriodMinutes ? clamp(Number(target.extraPeriodMinutes), 3, 30) : 15);
+  let goldenGoal = Boolean(target?.friendlyGoldenGoal ?? target?.goldenGoal);
+  let shootoutKicks = Number(target?.friendlyShootoutKicks ?? target?.shootoutKicks);
+  shootoutKicks = Number.isFinite(shootoutKicks) && shootoutKicks > 0 ? clamp(Math.round(shootoutKicks), 1, 10) : 5;
+
+  const etClauseMatch = rawText.match(/(?:одп\.?|доп\.?|дополнительн[а-я]*|овертайм[а-я]*|экстра-?тайм[а-я]*)\s*(?:врем[а-я]*)?([^.;!\n]*)/i);
+  if (etClauseMatch && !parsedExplicitEt) {
+    const sub = String(etClauseMatch[1] || "");
+    const nxm = sub.match(/\b([12])\s*[xх*]\s*(\d{1,2})\b/) || sub.match(/\b([12])\s*(?:тайм(?:а|ов)?|по)\s*(?:по\s+)?(\d{1,2})\s*(?:мин[а-я]*|')?/);
+    if (nxm) {
+      ep = clamp(Number(nxm[1]), 1, 2);
+      epm = clamp(Number(nxm[2]), 3, 30);
+    } else {
+      const singleMin = sub.match(/\b(\d{1,2})\s*(?:мин[а-я]*|')/);
+      if (singleMin) {
+        const tot = clamp(Number(singleMin[1]), 3, 60);
+        if (tot >= 20 && tot % 2 === 0) {
+          ep = 2;
+          epm = clamp(tot / 2, 3, 30);
+        } else {
+          ep = 1;
+          epm = clamp(tot, 3, 30);
+        }
+      }
+    }
+  }
+  if (!goldenGoal && /(?:золот[а-я]+\s+гол|до\s+(?:первого|1-?го|одного)\s+гол[а]?|правил[оа]\s+золотого\s+гола)/i.test(rawText)) {
+    goldenGoal = true;
+  }
+  const kicksMatch = rawText.match(/(?:по\s*(\d{1,2})\s*(?:пенальти|удар[аов]*)|сери[яи]\s+пенальти\s*(?:по|из)\s*(\d{1,2}))/i);
+  if (kicksMatch && !(Number(target?.friendlyShootoutKicks ?? target?.shootoutKicks) > 0)) {
+    shootoutKicks = clamp(Number(kicksMatch[1] || kicksMatch[2]), 1, 10);
+  }
+  if (explicitMode !== "auto") {
+    return buildRule(explicitMode, ep, epm, goldenGoal, shootoutKicks, explicitMode !== "none");
+  }
+  if (!rawText) return buildRule("none", ep, epm, false, 5, false);
+  const hasAlwaysPenText = /(?:пенальти\s+в\s+любом\s+случае|сери[яи]\s+пенальти\s+(?:в\s+любом\s+случае|независимо\s+от\s+сч[её]та|после\s+матча\s+при\s+любом)|обязательн[а-я]+\s+сери[яи]\s+пенальти)/i.test(rawText);
+  const noPenText = /(?:без\s+(?:серии\s+)?пенальти|пенальти\s+не\s+(?:бь[юё]т|провод|нужн)|без\s+11-?метровых)/i.test(rawText);
+  const noEtText = /(?:без\s+(?:одп|доп\.?|дополнительн[а-я]*)\s*врем|сразу\s+(?:сери[яи]\s+)?пенальти|без\s+овертайм)/i.test(rawText);
+  const hasEtText = /(?:одп\.?\s*врем|доп\.?\s*врем|дополнительн[а-я]*\s+врем|овертайм|экстра-?тайм|золот[а-я]+\s+гол)/i.test(rawText);
+  const hasPenShootoutText = /(?:сери[яию]\s+(?:послематчевых\s+)?пенальти|послематчев[а-я]*\s+пенальти|сразу\s+пенальти|(?:если|при|в\s+случае)\s+(?:ничь[а-я]*|ничейн[а-я]+|равн[а-я]+\s+сч[её]т)[^.;!\n]{0,60}пенальти|по\s+\d{1,2}\s*(?:пенальти|удар[аов]*\s*(?:пенальти)?)|по\s+пенальти|11-?метров[а-я]*\s+сери)/i.test(rawText) || (hasEtText && /(?:затем|потом|далее|и)\s+пенальти/i.test(rawText));
+
+  if (hasAlwaysPenText) return buildRule("always_penalties", ep, epm, goldenGoal, shootoutKicks, true);
+  if (hasEtText && !noEtText) return buildRule(noPenText ? "extra_only" : "extra_then_penalties", ep, epm, goldenGoal, shootoutKicks, true);
+  if (hasPenShootoutText && !noPenText) return buildRule("penalties", ep, epm, false, shootoutKicks, true);
+  return buildRule("none", ep, epm, false, 5, false);
 }
 function buildMatchFormatPeriods(mf: ReturnType<typeof resolveMatchFormat>, sixChunks = false): Array<[number, number]> {
   const periods: Array<[number, number]> = [];
@@ -9745,6 +9913,10 @@ function ensureApprovedFriendlyFixtures() {
         friendlyMatchFormat: r.matchFormat || void 0,
         friendlyVarMode: r.varMode || void 0,
         varEnabled: resolveMatchVarRule(r).enabled,
+        friendlyTieBreaker: r.tieBreakerMode || void 0,
+        friendlyExtraFormat: r.extraFormat || void 0,
+        friendlyGoldenGoal: r.goldenGoal ? true : void 0,
+        friendlyShootoutKicks: r.shootoutKicks || void 0,
         nationalType: r.nationalType || void 0,
         neutralField: place.neutral,
         stadium: place.neutral ? `${place.stadium} (нейтральное поле${place.city ? ", г. " + place.city : ""})` : place.stadium,
@@ -13266,10 +13438,12 @@ function motivText(tid, f, displayName?: string) {
   const lbl = displayName || team(tid)?.name;
   const sr = resolveMatchSubRules(f);
   const mf = resolveMatchFormat(f);
+  const tb = resolveMatchTieBreakerRule(f);
   const subNote = sr.isCustom ? ` Регламент замен: ${sr.label}.` : "";
   const fmtNote = mf.isCustom ? ` Формат матча: ${mf.label}.` : "";
-  if (isIntraSquad(f)) return `${lbl}: внутренний тренировочный спарринг (матч внутри одного клуба) — турнирных очков нет, игроки хорошо знают друг друга, борьба за место в стартовом составе и проверка тактических связок.${fmtNote}${subNote} ${f.friendlyConditions ? "Условия матча: " + f.friendlyConditions + ". " : ""}`;
-  if (f.comp === FRIENDLY_COMP) return `${lbl}: \u0442\u043E\u0432\u0430\u0440\u0438\u0449\u0435\u0441\u043A\u0438\u0439 \u043C\u0430\u0442\u0447 \u0432 \u043F\u0430\u0443\u0437\u0443 \u043D\u0430 \u0441\u0431\u043E\u0440\u043D\u044B\u0435 \u2014 \u0442\u0443\u0440\u043D\u0438\u0440\u043D\u044B\u0445 \u043E\u0447\u043A\u043E\u0432 \u043D\u0435\u0442, \u0442\u0440\u0435\u043D\u0435\u0440 \u0432\u043F\u0440\u0430\u0432\u0435 \u044D\u043A\u0441\u043F\u0435\u0440\u0438\u043C\u0435\u043D\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441 \u0441\u043E\u0441\u0442\u0430\u0432\u043E\u043C \u0438 \u0440\u043E\u0442\u0430\u0446\u0438\u0435\u0439, \u0438\u043D\u0442\u0435\u043D\u0441\u0438\u0432\u043D\u043E\u0441\u0442\u044C \u043D\u0438\u0436\u0435, \u043D\u043E \u0441\u0430\u043C\u043E\u043B\u044E\u0431\u0438\u0435 \u0438 \u0436\u0435\u043B\u0430\u043D\u0438\u0435 \u043F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0441\u0435\u0431\u044F \u043E\u0441\u0442\u0430\u044E\u0442\u0441\u044F.${fmtNote}${subNote} ${f.friendlyConditions ? "\u0423\u0441\u043B\u043E\u0432\u0438\u044F \u043C\u0430\u0442\u0447\u0430: " + f.friendlyConditions + ". " : ""}`;
+  const tbNote = tb.isCustom ? ` Регламент при ничьей: ${tb.label}.` : "";
+  if (isIntraSquad(f)) return `${lbl}: внутренний тренировочный спарринг (матч внутри одного клуба) — турнирных очков нет, игроки хорошо знают друг друга, борьба за место в стартовом составе и проверка тактических связок.${fmtNote}${subNote}${tbNote} ${f.friendlyConditions ? "Условия матча: " + f.friendlyConditions + ". " : ""}`;
+  if (f.comp === FRIENDLY_COMP) return `${lbl}: \u0442\u043E\u0432\u0430\u0440\u0438\u0449\u0435\u0441\u043A\u0438\u0439 \u043C\u0430\u0442\u0447 \u0432 \u043F\u0430\u0443\u0437\u0443 \u043D\u0430 \u0441\u0431\u043E\u0440\u043D\u044B\u0435 \u2014 \u0442\u0443\u0440\u043D\u0438\u0440\u043D\u044B\u0445 \u043E\u0447\u043A\u043E\u0432 \u043D\u0435\u0442, \u0442\u0440\u0435\u043D\u0435\u0440 \u0432\u043F\u0440\u0430\u0432\u0435 \u044D\u043A\u0441\u043F\u0435\u0440\u0438\u043C\u0435\u043D\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441 \u0441\u043E\u0441\u0442\u0430\u0432\u043E\u043C \u0438 \u0440\u043E\u0442\u0430\u0446\u0438\u0435\u0439, \u0438\u043D\u0442\u0435\u043D\u0441\u0438\u0432\u043D\u043E\u0441\u0442\u044C \u043D\u0438\u0436\u0435, \u043D\u043E \u0441\u0430\u043C\u043E\u043B\u044E\u0431\u0438\u0435 \u0438 \u0436\u0435\u043B\u0430\u043D\u0438\u0435 \u043F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0441\u0435\u0431\u044F \u043E\u0441\u0442\u0430\u044E\u0442\u0441\u044F.${fmtNote}${subNote}${tbNote} ${f.friendlyConditions ? "\u0423\u0441\u043B\u043E\u0432\u0438\u044F \u043C\u0430\u0442\u0447\u0430: " + f.friendlyConditions + ". " : ""}`;
   if (f.comp === "national" || f.comp === "national_u21") {
     return `${lbl}: международный матч национальной сборной (${f.label || compName(f)}) — престиж страны, проверка игровых связок в международную паузу и борьба игроков за место в заявке сборной.`;
   }
@@ -13605,6 +13779,7 @@ async function buildCtx(f) {
     subRules: resolveMatchSubRules(f),
     matchFormat: resolveMatchFormat(f),
     varRule: resolveMatchVarRule(f),
+    tieBreakerRule: resolveMatchTieBreakerRule(f),
     friendlyConditions: f.friendlyConditions || f.note || ""
   };
   const H = team(f.home), A = team(f.away);
@@ -13958,16 +14133,20 @@ function buildUser(ctx, a, b, st, issues, mode = "full") {
 `;
   const sr = ctx.subRules || resolveMatchSubRules({ comp: ctx.compId, intraSquad: ctx.intraSquad, friendlyConditions: ctx.friendlyConditions });
   const mf = ctx.matchFormat || resolveMatchFormat({ comp: ctx.compId, intraSquad: ctx.intraSquad, friendlyConditions: ctx.friendlyConditions });
-  if (mf.isCustom || ctx.compId === FRIENDLY_COMP || ctx.intraSquad) {
-    u += `ФОРМАТ МАТЧА (ТАЙМЫ И ДЛИТЕЛЬНОСТЬ): ${mf.promptSummary}
+  const tbRule = ctx.tieBreakerRule || resolveMatchTieBreakerRule({ comp: ctx.compId, intraSquad: ctx.intraSquad, friendlyConditions: ctx.friendlyConditions });
+  const isCustomFriendlyPrompt = ctx.compId === FRIENDLY_COMP || ctx.intraSquad || mf.isCustom || sr.isCustom || tbRule.isCustom || ctx.varRule?.isCustom || !!String(ctx.friendlyConditions || "").trim();
+  if (isCustomFriendlyPrompt) {
+    u += `═══ ОСОБЫЕ ПРАВИЛА И УСЛОВИЯ МАТЧА (СТРОГО ОБЯЗАТЕЛЬНО) ═══
+- Формат матча (таймы и длительность): ${mf.promptSummary}
+- Формат замен: ${sr.promptSummary}
+- Регламент при ничьей / послематчевый: ${tbRule.label}
+- Система VAR: ${supportsVar ? "ВКЛЮЧЕНА (используются видеоповторы VAR при спорных моментах)" : "ВЫКЛЮЧЕНА (матч проходит БЕЗ системы VAR)"}
 `;
-  }
-  if (sr.isCustom || ctx.compId === FRIENDLY_COMP || ctx.intraSquad) {
-    u += `ФОРМАТ ЗАМЕН МАТЧА: ${sr.promptSummary}${ctx.friendlyConditions ? ` | Условия: ${ctx.friendlyConditions}` : ""}
+    if (String(ctx.friendlyConditions || "").trim()) {
+      u += `- ПОЛЬЗОВАТЕЛЬСКИЕ УСЛОВИЯ МАТЧА (ИСПОЛНЯТЬ БУКВАЛЬНО НА 100%, ДАЖЕ ЕСЛИ ОНИ МЕНЯЮТ СТАНДАРТНЫЕ ПРАВИЛА ФУТБОЛА — НАПРИМЕР, БЕЗ КАРТОЧЕК, БЕЗ ОФСАЙДОВ, ОСОБЫЕ ОГРАНИЧЕНИЯ НА ГОЛЫ/ИГРУ, ОВЕРТАЙМ, ПЕНАЛЬТИ И Т.Д.): «${String(ctx.friendlyConditions).trim()}»
 `;
-  }
-  if (ctx.compId === FRIENDLY_COMP || ctx.intraSquad || ctx.varRule?.isCustom) {
-    u += `СИСТЕМА VAR В МАТЧЕ: ${supportsVar ? "ВКЛЮЧЕНА (используются видеоповторы VAR при спорных моментах)" : "ВЫКЛЮЧЕНА (матч проходит БЕЗ системы VAR)"}
+    }
+    u += `
 `;
   }
   if (st) {
@@ -14214,7 +14393,7 @@ ${lineText(ctx, "away")}
 
 ${broadcastBlock}
 
-Сгенерируй сводку всего матча (минуты 1–${mf.totalMinutes}, формат: ${mf.label}) строго в валидном JSON без markdown-обёртки: {"events":[...],"stats":{...},"energy_spent":{"Имя Фамилия":{"spent":число_0_60,"reason":"кратко за какую работу"}},"referee_eval":{"rating":число_5_0_9_5,"summary":"кратко оценка судейства"},"note":"..."}. Прематч и поминутная хроника не нужны. Голы указывай напрямую событиями "goal"/"own_goal" без предшествующего события "shot", а fulltime ставь на ${mf.totalMinutes}-й минуте.
+Сгенерируй сводку всего матча (минуты 1–${mf.totalMinutes}, формат: ${mf.label}${tbRule.isCustom ? `, ${tbRule.shortLabel}` : ""}) строго в валидном JSON без markdown-обёртки: {"events":[...],"stats":{...},"energy_spent":{"Имя Фамилия":{"spent":число_0_60,"reason":"кратко за какую работу"}},"referee_eval":{"rating":число_5_0_9_5,"summary":"кратко оценка судейства"},"note":"..."}. Прематч и поминутная хроника не нужны. Голы указывай напрямую событиями "goal"/"own_goal" без предшествующего события "shot", а fulltime ставь на ${mf.totalMinutes}-й минуте.${ctx.friendlyConditions ? " Обязательно учти и буквально исполни все пользовательские условия матча!" : ""}
 ОЦЕНКА ЭНЕРГИИ В "energy_spent": оцени индивидуально каждого игравшего игрока (старт + вышедшие на замену) по ПРОДЕЛАННОЙ РАБОТЕ, НЕ по шаблону минут: вратарь (ВР) почти стоит в воротах и тратит 3–11% (до 15% при шквале сейвов); защитник в низком блоке без беготни — 11–18%; обычный матч полевого — 18–28%; интенсивный прессинг/рывки по бровке/меньшинство — 30–46%; вышедшие в конце — 3–14%.`;
     return u;
   }
@@ -14224,23 +14403,41 @@ ${broadcastBlock}
   const pStarts: number[] = Array.isArray(mf.periodStarts) ? mf.periodStarts : [1, 46];
   const isBreakEnd = breakMins.includes(b);
   const pResumeIdx = pStarts.indexOf(a);
+  const isEtPhase = !!ctx.isExtraTimePhase;
+  const etRule = ctx.extraTimeRule || tbRule;
   u += `
 
 ${broadcastBlock}
 
-Сгенерируй отрезок матча (минуты ${a}–${b} из ${totalMin}) строго в валидном JSON без markdown-обёртки по правилам промпта (раздел 10 — формат вывода). Держи живой авторский язык комментатора, не повторяй однотипные зачины и помни о реалистичности фолов (много лёгких фолов БЕЗ карточки) и редкости красных карточек.`;
-  u += ` Ориентир по числу игровых событий в этом отрезке: ${Math.max(10, Math.round(span / 45 * 50))}–${Math.max(18, Math.round(span / 45 * 85))}.`;
-  if (a === 1) u += ` Это НАЧАЛО эфира: перед первым отрезком САМ выбери уникальный, реалистичный сценарий, темп и боевой настрой матча исходя из турнирной таблицы, мотивации обеих команд (например, борьба за 1-е место, медали, выживание или спокойный матч), разницы в классе, тактики, тренеров и профилей игроков — НЕ скатывайся в среднестатистический шаблон — и зафиксируй выбранный сценарий в state_at_end.chosen_scenario. Сначала дай прематч по разделу 0 (события с отрицательными минутами от -15 до -1 и допустимыми для него типами), затем kickoff на 1-й минуте и игру по выбранному сценарию.`;
-  else u += ` Прематч уже прошёл: события с отрицательными минутами НЕ создавай, продолжай ровно с минуты ${a}. Развивай или резко переламывай выбранный сценарий исходя из текущего счёта, карточек, усталости, замен и тренерских корректировок в перерыве, а итог зафиксируй в state_at_end.chosen_scenario, state_at_end.halftime_digest, state_at_end.halftime_adjustments и state_at_end.momentum_note.`;
+Сгенерируй отрезок матча (${isEtPhase ? "ДОПОЛНИТЕЛЬНОЕ ВРЕМЯ, " : ""}минуты ${a}–${b} из ${totalMin}) строго в валидном JSON без markdown-обёртки по правилам промпта (раздел 10 — формат вывода). Держи живой авторский язык комментатора, не повторяй однотипные зачины и помни о реалистичности фолов (много лёгких фолов БЕЗ карточки) и редкости красных карточек.`;
+  u += ` Ориентир по числу игровых событий в этом отрезке: ${Math.max(isEtPhase ? 6 : 10, Math.round(span / 45 * 50))}–${Math.max(isEtPhase ? 14 : 18, Math.round(span / 45 * 85))}.`;
+  if (isEtPhase) {
+    u += ` ИДЁТ ДОПОЛНИТЕЛЬНОЕ ВРЕМЯ (формат ${etRule.extraFormatLabel}). События с отрицательными минутами НЕ создавай!`;
+    if (pResumeIdx === 0) u += ` Начни отрезок со свистка о начале дополнительного времени (type="kickoff" на ${a}-й мин.).`;
+    if (etRule.goldenGoal) {
+      u += ` ДЕЙСТВУЕТ ПРАВИЛО ЗОЛОТОГО ГОЛА: как только одна из команд забивает первый гол (type="goal" или "own_goal") в дополнительное время, матч НЕМЕДЛЕННО завершается! Сразу после этого гола поставь событие type="fulltime" на той же минуте и больше НЕ создавай никаких игровых событий.`;
+    }
+  } else if (a === 1) {
+    u += ` Это НАЧАЛО эфира: перед первым отрезком САМ выбери уникальный, реалистичный сценарий, темп и боевой настрой матча исходя из турнирной таблицы, мотивации обеих команд (например, борьба за 1-е место, медали, выживание или спокойный матч), разницы в классе, тактики, тренеров и профилей игроков — НЕ скатывайся в среднестатистический шаблон — и зафиксируй выбранный сценарий в state_at_end.chosen_scenario. Сначала дай прематч по разделу 0 (события с отрицательными минутами от -15 до -1 и допустимыми для него типами), затем kickoff на 1-й минуте и игру по выбранному сценарию.`;
+  } else {
+    u += ` Прематч уже прошёл: события с отрицательными минутами НЕ создавай, продолжай ровно с минуты ${a}. Развивай или резко переламывай выбранный сценарий исходя из текущего счёта, карточек, усталости, замен и тренерских корректировок в перерыве, а итог зафиксируй в state_at_end.chosen_scenario, state_at_end.halftime_digest, state_at_end.halftime_adjustments и state_at_end.momentum_note.`;
+  }
   if (isBreakEnd) {
     const endPNum = breakMins.indexOf(b) + 1;
-    u += ` В КОНЦЕ ЭТОГО ОТРЕЗКА (около ${b}-й мин.) ОБЯЗАТЕЛЬНО дай событие type="halftime" (перерыв после ${endPNum}-го тайма). ОБЯЗАТЕЛЬНЫЙ «КОНСПЕКТ ПЕРЕРЫВА» В "state_at_end.halftime_digest": НЕ ограничивайся одним общим предложением! Верни массив из 3–4 конкретных фактов по итогам ${endPNum}-го тайма: 1) какой рисунок игры сложился, кто владел инициативой и через какие зоны/фланги шли главные атаки и моменты; 2) кто из конкретных игроков выделяется (кто тащит/опасен/спасает, кто проваливается, кто «горит» на ЖК или уже явно «наелся»); 3) какую логичную перестановку, коррекцию темпа или замену делают тренеры обеих команд в перерыве (с учётом их характера и предматчевой установки владельца); 4) главный узел напряжения/уязвимость на старт следующего тайма.`;
+    u += isEtPhase
+      ? ` В КОНЦЕ ЭТОГО ОТРЕЗКА (на ${b}-й мин.) ОБЯЗАТЕЛЬНО дай событие type="halftime" (короткий перерыв перед вторым дополнительным таймом) и обнови "state_at_end.halftime_digest" (2–3 факта).`
+      : ` В КОНЦЕ ЭТОГО ОТРЕЗКА (около ${b}-й мин.) ОБЯЗАТЕЛЬНО дай событие type="halftime" (перерыв после ${endPNum}-го тайма). ОБЯЗАТЕЛЬНЫЙ «КОНСПЕКТ ПЕРЕРЫВА» В "state_at_end.halftime_digest": НЕ ограничивайся одним общим предложением! Верни массив из 3–4 конкретных фактов по итогам ${endPNum}-го тайма: 1) какой рисунок игры сложился, кто владел инициативой и через какие зоны/фланги шли главные атаки и моменты; 2) кто из конкретных игроков выделяется (кто тащит/опасен/спасает, кто проваливается, кто «горит» на ЖК или уже явно «наелся»); 3) какую логичную перестановку, коррекцию темпа или замену делают тренеры обеих команд в перерыве (с учётом их характера и предматчевой установки владельца); 4) главный узел напряжения/уязвимость на старт следующего тайма.`;
   }
   if (pResumeIdx > 0) {
-    u += ` ПАМЯТЬ ${pResumeIdx + 1}-ГО ТАЙМА: НЕ начинай ${pResumeIdx + 1}-й тайм с чистого листа! Начни отрезок со свистка (type="kickoff" на ${a}-й мин.) и опирайся на «КОНСПЕКТ ПЕРЕРЫВА» сверху: покажи в игре, как работают или ломаются перестановки тренеров из перерыва, развивай/перекрывай проблемные зоны и фланги и учитывай конкретных игроков, которые выделяются, устали или «горят» на жёлтой карточке.`;
+    u += isEtPhase
+      ? ` Начни второй тайм дополнительного времени со свистка (type="kickoff" на ${a}-й мин.) и доведи овертайм до развязки.`
+      : ` ПАМЯТЬ ${pResumeIdx + 1}-ГО ТАЙМА: НЕ начинай ${pResumeIdx + 1}-й тайм с чистого листа! Начни отрезок со свистка (type="kickoff" на ${a}-й мин.) и опирайся на «КОНСПЕКТ ПЕРЕРЫВА» сверху: покажи в игре, как работают или ломаются перестановки тренеров из перерыва, развивай/перекрывай проблемные зоны и фланги и учитывай конкретных игроков, которые выделяются, устали или «горят» на жёлтой карточке.`;
   }
   if (b >= totalMin) {
-    u += ` Это конец матча: на ${totalMin}-й минуте (или с учётом добавленных минут ${totalMin}–${totalMin + 4}) заверши событием fulltime; после финального свистка по разделу 0.8 можно добавить 1–3 события (min ${totalMin}–${totalMin + 5}, типы crowd | tactical_note | incident).
+    u += isEtPhase
+      ? ` Это конец дополнительного времени: на ${totalMin}-й минуте (или сразу после золотого гола) заверши событием fulltime.
+ОБЯЗАТЕЛЬНЫЙ ИТОГ УСТАЛОСТИ В "state_at_end.energy_spent" и "state_at_end.referee_eval" (обновлённая оценка с учётом овертайма).`
+      : ` Это конец матча: на ${totalMin}-й минуте (или с учётом добавленных минут ${totalMin}–${totalMin + 4}) заверши событием fulltime; после финального свистка по разделу 0.8 можно добавить 1–3 события (min ${totalMin}–${totalMin + 5}, типы crowd | tactical_note | incident).
 ОБЯЗАТЕЛЬНЫЙ ИТОГ УСТАЛОСТИ В "state_at_end.energy_spent": оцени персонально каждого игрока, выходившего на поле в этом матче (оба старта и все замены), кто на сколько % устал ИМЕННО ПО ПРОДЕЛАННОЙ РАБОТЕ В МАТЧЕ (НЕ одинаково по минутам!):
 - Формат: "energy_spent": {"Имя Фамилия": {"spent": целое_0_60, "reason": "коротко почему"}}.
 - Вратари (ВР) почти всё время стоят в воротах, мало бегают и мало устают: 3–10% в обычной игре, 11–16% лишь при множестве сейвов/выходов.
@@ -15087,7 +15284,8 @@ function normalizeEvents(raw, a, b, ctx, prev, minEv = 3, opts?: { strictLegionS
         let sm;
         while ((sm = scRe.exec(ev.text)) !== null) {
           const x = Number(sm[1]), y = Number(sm[2]);
-          if (x <= 15 && y <= 15 && !((x === runH && y === runA) || (x === runA && y === runH))) {
+          const maxScoreChk = ((ctx?.compId === FRIENDLY_COMP || ctx?.intraSquad) && String(ctx?.friendlyConditions || "").trim()) ? 35 : 15;
+          if (x <= maxScoreChk && y <= maxScoreChk && !((x === runH && y === runA) || (x === runA && y === runH))) {
             fatalProbs.push(`в событии ${ev.min}' (${ev.type}) указан счёт ${x}:${y}, хотя по событиям goal/own_goal счёт ${runH}:${runA}`);
             break;
           }
@@ -15098,7 +15296,8 @@ function normalizeEvents(raw, a, b, ctx, prev, minEv = 3, opts?: { strictLegionS
   {
     const g = out.filter((x) => x.type === "goal" || x.type === "own_goal");
     const tot = st.score[0] + st.score[1] + g.length;
-    if (tot > 15) probs.push("\u043D\u0435\u0440\u0435\u0430\u043B\u0438\u0441\u0442\u0438\u0447\u043D\u043E \u043C\u043D\u043E\u0433\u043E \u0433\u043E\u043B\u043E\u0432 (" + tot + "), \u043C\u0430\u0442\u0447 \u0434\u043E\u043B\u0436\u0435\u043D \u0432\u044B\u0433\u043B\u044F\u0434\u0435\u0442\u044C \u043A\u0430\u043A \u043D\u0430\u0441\u0442\u043E\u044F\u0449\u0438\u0439 \u0444\u0443\u0442\u0431\u043E\u043B");
+    const maxGoalsAllowed = ((ctx?.compId === FRIENDLY_COMP || ctx?.intraSquad) && String(ctx?.friendlyConditions || "").trim()) ? 35 : 15;
+    if (tot > maxGoalsAllowed) probs.push("\u043D\u0435\u0440\u0435\u0430\u043B\u0438\u0441\u0442\u0438\u0447\u043D\u043E \u043C\u043D\u043E\u0433\u043E \u0433\u043E\u043B\u043E\u0432 (" + tot + "), \u043C\u0430\u0442\u0447 \u0434\u043E\u043B\u0436\u0435\u043D \u0432\u044B\u0433\u043B\u044F\u0434\u0435\u0442\u044C \u043A\u0430\u043A \u043D\u0430\u0441\u0442\u043E\u044F\u0449\u0438\u0439 \u0444\u0443\u0442\u0431\u043E\u043B");
   }
   if (unknown.size > 4) probs.push("\u043D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0435 \u0438\u0433\u0440\u043E\u043A\u0438 (\u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0442\u043E\u043B\u044C\u043A\u043E \u0438\u0433\u0440\u043E\u043A\u043E\u0432 \u0438\u0437 \u0441\u043E\u0441\u0442\u0430\u0432\u043E\u0432): " + [...unknown].slice(0, 6).join(", "));
   if (fatalProbs.length > 0) throw new Error([...new Set(fatalProbs)].slice(0, 4).join("; "));
@@ -15159,13 +15358,25 @@ function normalizeEvents(raw, a, b, ctx, prev, minEv = 3, opts?: { strictLegionS
     }
     out = withCommentary;
   }
+  if (ctx?.isExtraTimePhase && ctx?.extraTimeRule?.goldenGoal) {
+    const ggIdx = out.findIndex((e) => e.type === "goal" || e.type === "own_goal");
+    if (ggIdx >= 0) {
+      const ggEv = out[ggIdx];
+      out = out.slice(0, ggIdx + 1);
+      out.push({ min: ggEv.min, sec: Math.min(59, (ggEv.sec || 0) + 6), team: "none", type: "fulltime", players: [], pids: [], text: "ЗОЛОТОЙ ГОЛ! Финальный свисток немедленно завершает матч!" });
+      return out;
+    }
+  }
   const lastMin = out.length ? out[out.length - 1].min : totalMin;
-  if (breakMins.includes(b) && !out.some((e) => e.type === "halftime")) {
+  if (breakMins.includes(b) && !out.some((e) => e.type === "halftime") && !out.some((e) => e.type === "fulltime")) {
     const bNum = breakMins.indexOf(b) + 1;
-    out.push({ min: Math.max(b, lastMin), sec: 59, team: "none", type: "halftime", players: [], pids: [], text: mf.periodsCount > 2 ? `Перерыв после ${bNum}-го тайма.` : "\u0421\u0432\u0438\u0441\u0442\u043E\u043A \u2014 \u043F\u0435\u0440\u0435\u0440\u044B\u0432." });
+    const htMsg = ctx?.isExtraTimePhase
+      ? "Перерыв между таймами дополнительного времени."
+      : (mf.periodsCount > 2 ? `Перерыв после ${bNum}-го тайма.` : "\u0421\u0432\u0438\u0441\u0442\u043E\u043A \u2014 \u043F\u0435\u0440\u0435\u0440\u044B\u0432.");
+    out.push({ min: Math.max(b, lastMin), sec: 59, team: "none", type: "halftime", players: [], pids: [], text: htMsg });
   }
   if (b >= totalMin && !out.some((e) => e.type === "fulltime")) {
-    out.push({ min: Math.max(totalMin, lastMin), sec: 59, team: "none", type: "fulltime", players: [], pids: [], text: "\u0424\u0438\u043D\u0430\u043B\u044C\u043D\u044B\u0439 \u0441\u0432\u0438\u0441\u0442\u043E\u043A!" });
+    out.push({ min: Math.max(totalMin, lastMin), sec: 59, team: "none", type: "fulltime", players: [], pids: [], text: ctx?.isExtraTimePhase ? "Свисток об окончании дополнительного времени!" : "\u0424\u0438\u043D\u0430\u043B\u044C\u043D\u044B\u0439 \u0441\u0432\u0438\u0441\u0442\u043E\u043A!" });
   }
   return out;
 }
@@ -15260,11 +15471,21 @@ function fakePeriod(a, b, ctx, prev) {
   const totalMin = mf.totalMinutes || 90;
   const pStarts: number[] = Array.isArray(mf.periodStarts) ? mf.periodStarts : [1, 46];
   const breakMins: number[] = Array.isArray(mf.breakMinutes) ? mf.breakMinutes : [45];
+  const condLc = String(ctx?.friendlyConditions || "").toLowerCase().replace(/ё/g, "е");
+  const isCustomFriendly = !!(condLc && (ctx?.compId === FRIENDLY_COMP || ctx?.intraSquad));
+  const noCardsCond = isCustomFriendly && /(?:без\s+(?:ж[её]лтых\s+и\s+красных\s+|красных\s+и\s+ж[её]лтых\s+)?карточек|карточки\s+(?:не\s+показ|отменен|запрещ)|без\s+(?:жк|кк|удалений))/i.test(condLc);
+  const noOffsidesCond = isCustomFriendly && /(?:без\s+офсайд|офсайды\s+(?:отменен|не\s+фиксир))/i.test(condLc);
+  const isGoldenGoalMode = !!(ctx?.isExtraTimePhase && ctx?.extraTimeRule?.goldenGoal);
+  let goldenGoalScored = false;
+  let goldenGoalMin = b;
+  let goldenGoalSec = 30;
   const pStartIdx = pStarts.indexOf(a);
   if (pStartIdx >= 0) {
-    const koText = pStartIdx === 0
-      ? "Стартовый свисток! Мяч в игре — смотрим футбол."
-      : (mf.periodsCount > 2 ? `Свисток на ${pStartIdx + 1}-й тайм, команды возвращаются на поле.` : "Свисток на второй тайм, команды снова в деле.");
+    const koText = ctx?.isExtraTimePhase
+      ? (pStartIdx === 0 ? "Свисток на дополнительное время! Команды снова в игре." : "Второй тайм дополнительного времени — всё решат эти минуты!")
+      : (pStartIdx === 0
+          ? "Стартовый свисток! Мяч в игре — смотрим футбол."
+          : (mf.periodsCount > 2 ? `Свисток на ${pStartIdx + 1}-й тайм, команды возвращаются на поле.` : "Свисток на второй тайм, команды снова в деле."));
     push(a, 0, "none", "kickoff", [], koText);
   }
   let hold = R() < 0.5 ? "home" : "away";
@@ -15361,6 +15582,7 @@ function fakePeriod(a, b, ctx, prev) {
       const goalThreshold = 0.22 * classGoalFactor;
       if (q2 < goalThreshold) {
         push(m, 23, s, "goal", [sh, p2 !== sh ? p2 : p1], `ГОЛ! ${ctx.names[sh]} переигрывает ${gk ? ctx.names[gk] : "вратаря"} — мяч в сетке, ${score[0] + (s === "home" ? 1 : 0)}:${score[1] + (s === "away" ? 1 : 0)}!`);
+        if (isGoldenGoalMode) { goldenGoalScored = true; goldenGoalMin = m; goldenGoalSec = 23; break; }
       } else if (q2 < 0.6 && gk) {
         push(m, 23, o, "save", [gk, sh], `${ctx.names[gk]} в броске дотягивается до мяча и переводит его в сторону от штанги!`);
       } else {
@@ -15371,8 +15593,8 @@ function fakePeriod(a, b, ctx, prev) {
       const f = pick(Q), v = pick(P);
       const fName = ctx.names[f], vName = ctx.names[v];
       const fRolled = R();
-      const isYellow = fRolled < discProf.yellowOnFoulProb && !rcSet.has(fName);
-      const isDirectRed = !isYellow && rcSet.size === 0 && fRolled > 1 - discProf.allowStraightRedRate && m > 25;
+      const isYellow = !noCardsCond && fRolled < discProf.yellowOnFoulProb && !rcSet.has(fName);
+      const isDirectRed = !noCardsCond && !isYellow && rcSet.size === 0 && fRolled > 1 - discProf.allowStraightRedRate && m > 25;
       push(m, 40, o, "foul", [f, v], pickRealisticFoulLine(isYellow || isDirectRed, fName, vName, R()));
       if (isDirectRed && GROUP[ctx.pos[f]] !== "gk") {
         rcSet.add(fName);
@@ -15421,7 +15643,7 @@ function fakePeriod(a, b, ctx, prev) {
       const spB = coShort || leadShort || "Комментатор";
       if (ctx?.supportsVar === false) {
         const noVarKind = R();
-        if (noVarKind < 0.45) {
+        if (noVarKind < 0.45 && !noOffsidesCond) {
           push(m, 15, s, "highlight", [att], `${attN} вколачивает мяч в сетку, но тут же поднимается флажок лайнсмена на ближней бровке!`);
           push(m + 1, 5, o, "offside", [att], `ГОЛ НЕ ЗАСЧИТАН! Помощник арбитра сразу фиксирует офсайд у ${attN}, а ${refN} указывает на свободный удар. Счёт остаётся ${score[0]}:${score[1]}.`, { disallowedGoal: true });
           m += 1;
@@ -15432,6 +15654,7 @@ function fakePeriod(a, b, ctx, prev) {
           push(m + 1, 20, s, "penalty", [penTaker], `ПЕНАЛЬТИ в ворота ${ctx.sides[o].name}! ${spA}: «Сразу увидел фол арбитр и взял решение на себя».`);
           if (R() < 0.76) {
             push(m + 2, 5, s, "goal", [penTaker], `ГОЛ! ${ctx.names[penTaker]} уверенно реализует 11-метровый!`);
+            if (isGoldenGoalMode) { goldenGoalScored = true; goldenGoalMin = m + 2; goldenGoalSec = 5; break; }
           } else if (gk) {
             push(m + 2, 5, o, "save", [gk, penTaker], `${ctx.names[gk]} угадывает направление и спасает ворота!`);
           } else {
@@ -15445,7 +15668,7 @@ function fakePeriod(a, b, ctx, prev) {
       } else {
         const varN = ctx.refereeCrew?.var || "видеоассистент";
         const varKind = R();
-        if (varKind < 0.28) {
+        if (varKind < 0.28 && !noOffsidesCond) {
           // Offside / buildup review — varied scenarios & commentator opinion can differ
           if (R() < 0.5) {
             push(m, 15, s, "highlight", [att], `${attN} вколачивает мяч под перекладину, но флажок не поднят — при этом защитники ${ctx.sides[o].name} сразу машут в сторону офсайда!`);
@@ -15458,6 +15681,7 @@ function fakePeriod(a, b, ctx, prev) {
             push(m, 30, "none", "var", [att], `Пауза перед центром поля: видеоассистенты проверяют, мешал ли партнёр ${attN} из офсайда голкиперу увидеть момент удара.`);
             push(m + 1, 18, "none", "commentator_intro", [], `${spA}: «На мой вкус, игрок в центре вратарской перекрывал угол обзора — скорее всего, взятие ворот отменят».`, { varPause: true });
             push(m + 2, 12, s, "goal", [att], `ГОЛ ЗАСЧИТАН! ${refN} убеждается, что вратарь видел траекторию с самого начала — ${spA}: «Признаю, перестраховался я в прогнозе, здесь всё по делу!»`);
+            if (isGoldenGoalMode) { goldenGoalScored = true; goldenGoalMin = m + 2; goldenGoalSec = 12; break; }
             m += 2;
           }
         } else if (varKind < 0.52) {
@@ -15477,6 +15701,7 @@ function fakePeriod(a, b, ctx, prev) {
           const gk = Q.find((p) => ctx.pos[p] === "ВР") || null;
           if (R() < 0.76) {
             push(m + 3, 5, s, "goal", [penTaker], `ГОЛ! ${ctx.names[penTaker]} хладнокровно реализует пенальти!`);
+            if (isGoldenGoalMode) { goldenGoalScored = true; goldenGoalMin = m + 3; goldenGoalSec = 5; break; }
           } else if (gk) {
             push(m + 3, 5, o, "save", [gk, penTaker], `${ctx.names[gk]} читает угол и тащит пенальти!`);
           } else {
@@ -15488,6 +15713,7 @@ function fakePeriod(a, b, ctx, prev) {
           push(m, 18, s, "shot", [att], `Резкий удар ${attN} низом из-под защитника!`);
           push(m, 22, s, "highlight", [att], `Мяч в воротах, но гости требуют проверить обработку мяча ${attN} в начале атаки — было касание плечом или выше допустимой зоны?`);
           push(m + 1, 5, s, "goal", [att], `ГОЛ ЗАСЧИТАН! Повтор с лицевой показал чистый приём на границе плеча и груди — быстрое подтверждение ВАР!`);
+          if (isGoldenGoalMode) { goldenGoalScored = true; goldenGoalMin = m + 1; goldenGoalSec = 5; break; }
           m += 1;
         }
       }
@@ -15518,7 +15744,7 @@ function fakePeriod(a, b, ctx, prev) {
         }
       }
     }
-    if (!touchlineCardTried && !touchlineCardDone && m >= touchlineCardMin) {
+    if (!noCardsCond && !touchlineCardTried && !touchlineCardDone && m >= touchlineCardMin) {
       touchlineCardTried = true;
       if (R() < touchlineCardProb) {
         const sideT: "home" | "away" = R() < 0.5 ? "home" : "away";
@@ -15577,12 +15803,19 @@ function fakePeriod(a, b, ctx, prev) {
       }
     }
   }
+  if (goldenGoalScored) {
+    push(goldenGoalMin, Math.min(59, goldenGoalSec + 6), "none", "fulltime", [], `ЗОЛОТОЙ ГОЛ! Финальный свисток немедленно завершает матч: ${ctx.sides.home.name} ${score[0]}:${score[1]} ${ctx.sides.away.name}!`);
+    return ev;
+  }
   const lastEvMin = ev.length ? ev[ev.length - 1].min : b;
   if (breakMins.includes(b)) {
     const bNum = breakMins.indexOf(b) + 1;
-    push(Math.max(b, lastEvMin), 59, "none", "halftime", [], mf.periodsCount > 2 ? `Перерыв после ${bNum}-го тайма — ${score[0]}:${score[1]}.` : `Свисток на перерыв — ${score[0]}:${score[1]}.`);
+    const htTxt = ctx?.isExtraTimePhase
+      ? `Перерыв между таймами дополнительного времени — ${score[0]}:${score[1]}.`
+      : (mf.periodsCount > 2 ? `Перерыв после ${bNum}-го тайма — ${score[0]}:${score[1]}.` : `Свисток на перерыв — ${score[0]}:${score[1]}.`);
+    push(Math.max(b, lastEvMin), 59, "none", "halftime", [], htTxt);
   }
-  if (b >= totalMin) push(Math.max(totalMin, lastEvMin), 59, "none", "fulltime", [], `Финальный свисток! Итог встречи: ${ctx.sides.home.name} ${score[0]}:${score[1]} ${ctx.sides.away.name}.`);
+  if (b >= totalMin) push(Math.max(totalMin, lastEvMin), 59, "none", "fulltime", [], `${ctx?.isExtraTimePhase ? "Свисток об окончании дополнительного времени!" : "Финальный свисток!"} Итог встречи: ${ctx.sides.home.name} ${score[0]}:${score[1]} ${ctx.sides.away.name}.`);
   return ev;
 }
 async function genPeriod(a, b, ctx, prev, note, depth = 0, onAtomicSuccess?: (seg: { a: number; b: number; events: any[]; note: string; fallback?: boolean; energyReport?: any; refereeReport?: any }) => Promise<void> | void) {
@@ -15609,9 +15842,10 @@ async function genPeriod(a, b, ctx, prev, note, depth = 0, onAtomicSuccess?: (se
           const pm = parseEventMinSec(x || {});
           return Number.isFinite(pm.min) && pm.min > mx ? pm.min : mx;
         }, a - 1);
-        const missingHt = breakMins.includes(b) && !rawEvents.some((x) => normalizeEventType(x?.type) === "halftime");
-        const missingFt = b >= totalMin && !rawEvents.some((x) => normalizeEventType(x?.type) === "fulltime");
-        if (lastRawMin < b - 5 || missingHt || missingFt) {
+        const isGoldenGoalDone = !!(ctx?.isExtraTimePhase && ctx?.extraTimeRule?.goldenGoal && rawEvents.some((x) => ["goal", "own_goal"].includes(normalizeEventType(x?.type))) && rawEvents.some((x) => normalizeEventType(x?.type) === "fulltime"));
+        const missingHt = !isGoldenGoalDone && breakMins.includes(b) && !rawEvents.some((x) => normalizeEventType(x?.type) === "halftime");
+        const missingFt = !isGoldenGoalDone && b >= totalMin && !rawEvents.some((x) => normalizeEventType(x?.type) === "fulltime");
+        if ((!isGoldenGoalDone && lastRawMin < b - 5) || missingHt || missingFt) {
           throw new Error("ответ ИИ оборвался до завершения отрезка");
         }
       }
@@ -15928,10 +16162,96 @@ function reconcileLightGoals(events: any[], rawStats: any, rawNote: string, ctx:
   return { events: out, stats, note };
 }
 
+function buildExtraTimePeriods(regTotalMin: number, tieRule: ReturnType<typeof resolveMatchTieBreakerRule>): Array<[number, number]> {
+  const ep = tieRule.extraPeriodsCount === 1 ? 1 : 2;
+  const epm = clamp(Math.round(tieRule.extraPeriodMinutes || 15), 3, 30);
+  if (ep === 1) return [[regTotalMin + 1, regTotalMin + epm]];
+  return [
+    [regTotalMin + 1, regTotalMin + epm],
+    [regTotalMin + epm + 1, regTotalMin + epm * 2]
+  ];
+}
+function buildExtraTimeContext(ctx: any, tieRule: ReturnType<typeof resolveMatchTieBreakerRule>, regTotalMin: number) {
+  const ep = tieRule.extraPeriodsCount === 1 ? 1 : 2;
+  const epm = clamp(Math.round(tieRule.extraPeriodMinutes || 15), 3, 30);
+  const etTotal = ep * epm;
+  const periodStarts = ep === 2 ? [regTotalMin + 1, regTotalMin + epm + 1] : [regTotalMin + 1];
+  const breakMinutes = ep === 2 ? [regTotalMin + epm] : [];
+  return {
+    ...ctx,
+    isExtraTimePhase: true,
+    regularTotalMinutes: regTotalMin,
+    extraTimeRule: tieRule,
+    tieBreakerRule: tieRule,
+    matchFormat: {
+      mode: `et_${ep}x${epm}`,
+      periodsCount: ep,
+      periodMinutes: epm,
+      totalMinutes: regTotalMin + etTotal,
+      periodStarts,
+      breakMinutes,
+      isCustom: true,
+      label: `Доп. время ${tieRule.extraFormatLabel}`,
+      promptSummary: `Дополнительное время ${tieRule.extraFormatLabel}${tieRule.goldenGoal ? " (правило золотого гола)" : ""}`
+    }
+  };
+}
+function prepareEventsForExtraTime(events: any[], regTotalMin: number, tieRule: ReturnType<typeof resolveMatchTieBreakerRule>) {
+  const copy = [...(events || [])];
+  const ftIdx = copy.findIndex((x) => x.type === "fulltime");
+  const breakEv = {
+    min: ftIdx >= 0 ? Math.max(regTotalMin, Number(copy[ftIdx]?.min) || regTotalMin) : regTotalMin,
+    sec: 59,
+    team: "none",
+    type: "halftime",
+    isExtraTimeBreak: true,
+    players: [],
+    pids: [],
+    text: `Основное время завершено вничью — впереди дополнительное время (${tieRule.extraFormatLabel}${tieRule.goldenGoal ? ", правило золотого гола" : ""}).`
+  };
+  if (ftIdx >= 0) {
+    return [...copy.slice(0, ftIdx), breakEv];
+  }
+  return [...copy, breakEv];
+}
 async function genLight(ctx) {
   const mf = ctx?.matchFormat || resolveMatchFormat({});
   const totalMin = mf.totalMinutes || 90;
-  if (!hasLLM()) return { events: fakePeriod(1, totalMin, ctx, []), stats: null, note: "", energyReport: null, refereeReport: null, fallback: true };
+  const tieRule = ctx.tieBreakerRule || resolveMatchTieBreakerRule({ comp: ctx.compId, intraSquad: ctx.intraSquad, friendlyConditions: ctx.friendlyConditions });
+  const runEtAfterLight = async (baseRes: { events: any[]; stats: any; note: string; energyReport: any; refereeReport: any; fallback?: boolean }) => {
+    const [regH, regA] = rescore(baseRes.events);
+    if (regH !== regA || !tieRule.hasExtraTime) return baseRes;
+    let combinedEvents = prepareEventsForExtraTime(baseRes.events, totalMin, tieRule);
+    const etCtx = buildExtraTimeContext(ctx, tieRule, totalMin);
+    const etPeriods = buildExtraTimePeriods(totalMin, tieRule);
+    const preEtLen = combinedEvents.length;
+    ctx.playedExtraTime = true;
+    ctx.regularTotalMinutes = totalMin;
+    ctx.extraTotalMinutes = tieRule.extraTotalMinutes;
+    let outNote = baseRes.note;
+    let outEnergy = baseRes.energyReport;
+    let outRefEval = baseRes.refereeReport;
+    let outFallback = !!baseRes.fallback;
+    for (const [etA, etB] of etPeriods) {
+      const seg = await genPeriod(etA, etB, etCtx, combinedEvents, outNote, 0);
+      combinedEvents = combinedEvents.concat(seg.events);
+      outNote = seg.note || outNote;
+      if (seg.energyReport) outEnergy = seg.energyReport;
+      if (seg.refereeReport) outRefEval = seg.refereeReport;
+      outFallback = outFallback || !!seg.fallback;
+      if (tieRule.goldenGoal && combinedEvents.slice(preEtLen).some((x) => x.type === "goal" || x.type === "own_goal")) {
+        break;
+      }
+    }
+    if (![...combinedEvents].reverse().some((x) => x.type === "fulltime")) {
+      const lastM = combinedEvents.length ? Number(combinedEvents[combinedEvents.length - 1].min) || (totalMin + tieRule.extraTotalMinutes) : (totalMin + tieRule.extraTotalMinutes);
+      combinedEvents.push({ min: Math.max(totalMin + tieRule.extraTotalMinutes, lastM), sec: 59, team: "none", type: "fulltime", players: [], pids: [], text: "Свисток об окончании дополнительного времени!" });
+    }
+    return { events: combinedEvents, stats: baseRes.stats, note: outNote, energyReport: outEnergy, refereeReport: outRefEval, fallback: outFallback };
+  };
+  if (!hasLLM()) {
+    return runEtAfterLight({ events: fakePeriod(1, totalMin, ctx, []), stats: null, note: "", energyReport: null, refereeReport: null, fallback: true });
+  }
   const prof = computeLightMatchProfile(ctx);
   ctx.lightProfile = prof;
   const sys = (db.settings.systemPrompt || SYS_DEFAULT) + LIGHT_SYS_ADD;
@@ -15957,7 +16277,7 @@ async function genLight(ctx) {
       }
       const rawEnergy = r?.energy_spent || r?.state_at_end?.energy_spent || r?.fatigue_report || null;
       const rawRefEval = r?.referee_eval || r?.state_at_end?.referee_eval || null;
-      return { events, stats, note, energyReport: rawEnergy, refereeReport: rawRefEval };
+      return await runEtAfterLight({ events, stats, note, energyReport: rawEnergy, refereeReport: rawRefEval });
     } catch (e: any) {
       lastErr = e.message;
       lastErrorObj = e;
@@ -16529,7 +16849,11 @@ async function runMatch(id, opts = {}) {
   f.err = "";
   f.hold = null;
   saveNow(true);
-  const store = { ai: true, calls: 0, cap: +db.settings.maxAiCalls || 6 };
+  const mfForCap = resolveMatchFormat(f);
+  const tbForCap = resolveMatchTieBreakerRule(f);
+  const baseCap = +db.settings.maxAiCalls || 6;
+  const minCapNeeded = (db.settings.chunks == 6 ? mfForCap.periodsCount * 2 : mfForCap.periodsCount) + (tbForCap.hasExtraTime ? tbForCap.extraPeriodsCount + 2 : 0) + 1;
+  const store = { ai: true, calls: 0, cap: Math.max(baseCap, minCapNeeded) };
   await aiCtx.run(store, async () => {
     const stillValid = () => {
       const cf = fx(id);
@@ -16542,6 +16866,7 @@ async function runMatch(id, opts = {}) {
         ? await ensureMatch(id, true)
         : null;
       if (!stillValid()) return;
+      const savedTotalMin = maybeSaved?.ctx?.matchFormat?.totalMinutes || resolveMatchFormat(f).totalMinutes || 90;
       const canResumeCp = Boolean(
         !light &&
         maybeSaved &&
@@ -16552,7 +16877,7 @@ async function runMatch(id, opts = {}) {
         Array.isArray(maybeSaved.events) &&
         maybeSaved.events.length > 0 &&
         Number(maybeSaved.upToMin) > 0 &&
-        Number(maybeSaved.upToMin) < 90
+        Number(maybeSaved.upToMin) < savedTotalMin
       );
       const ctx = canResumeCp ? maybeSaved.ctx : await buildCtx(f);
       if (!stillValid()) return;
@@ -16623,6 +16948,41 @@ async function runMatch(id, opts = {}) {
           f._ownerAt = Date.now();
           pgRefreshOwner(id, INSTANCE_ID);
           await genPeriod(segStart, b, ctx, events, note, 0, onSegmentSuccess);
+        }
+        const [regH, regA] = rescore(events);
+        const tieRule = ctx.tieBreakerRule || resolveMatchTieBreakerRule(f);
+        if (regH === regA && tieRule.hasExtraTime && stillValid()) {
+          events = prepareEventsForExtraTime(events, totalMin, tieRule);
+          const etCtx = buildExtraTimeContext(ctx, tieRule, totalMin);
+          const etPeriods = buildExtraTimePeriods(totalMin, tieRule);
+          const preEtLen = events.length;
+          ctx.playedExtraTime = true;
+          ctx.regularTotalMinutes = totalMin;
+          ctx.extraTotalMinutes = tieRule.extraTotalMinutes;
+          for (const [etA, etB] of etPeriods) {
+            if (!stillValid()) return;
+            f._ownerAt = Date.now();
+            pgRefreshOwner(id, INSTANCE_ID);
+            await genPeriod(etA, etB, etCtx, events, note, 0, async (seg) => {
+              if (!stillValid()) return;
+              events = events.concat(seg.events);
+              note = seg.note;
+              if (seg.energyReport) energyReport = seg.energyReport;
+              if (seg.refereeReport) refereeReport = seg.refereeReport;
+              fallback = fallback || !!seg.fallback;
+              f.aiCalls = aiCallsBase + store.calls;
+            });
+            if (tieRule.goldenGoal && events.slice(preEtLen).some((x) => x.type === "goal" || x.type === "own_goal")) {
+              break;
+            }
+          }
+          if (etCtx.chosenScenario) ctx.chosenScenario = etCtx.chosenScenario;
+          if (etCtx.halftimeAdjustments) ctx.halftimeAdjustments = etCtx.halftimeAdjustments;
+          if (etCtx.halftimeDigest) ctx.halftimeDigest = etCtx.halftimeDigest;
+          if (![...events].reverse().some((x) => x.type === "fulltime")) {
+            const lastEtMin = events.length ? Number(events[events.length - 1].min) || (totalMin + tieRule.extraTotalMinutes) : (totalMin + tieRule.extraTotalMinutes);
+            events.push({ min: Math.max(totalMin + tieRule.extraTotalMinutes, lastEtMin), sec: 59, team: "none", type: "fulltime", players: [], pids: [], text: "Свисток об окончании дополнительного времени!" });
+          }
         }
       }
       if (!stillValid()) return;
@@ -16874,7 +17234,10 @@ async function finish(id) {
   applyMatchEnergyToStats(f.st, m, f);
   m.stats = f.st;
   const hadPenBefore = !!f.pen;
-  if ((f.comp === "cup" || f.comp === "supercup") && f.hg === f.ag && !f.pen) f.pen = shootout(f, m);
+  const tbFinish = resolveMatchTieBreakerRule(f);
+  if (!f.pen && ((f.hg === f.ag && tbFinish.hasShootout) || tbFinish.alwaysShootout)) {
+    f.pen = shootout(f, m, { kicksPerSide: tbFinish.shootoutKicks });
+  }
   checkPlayoffShootout(f, m);
   if (!hadPenBefore && f.pen?.kicks?.length) {
     appendShootoutEventsToMatch(f, m, true);
@@ -17165,12 +17528,13 @@ function getShootoutParticipants(f: any, m: any, side: "home" | "away", rFn: () 
   }
   return { takers: outfield.length ? [...outfield, gk] : [gk], gk };
 }
-function shootout(f, m: any = null) {
+function shootout(f, m: any = null, opts?: { kicksPerSide?: number }) {
   const r = rng(`${f.id}_${f.hg ?? 0}_${f.ag ?? 0}_pen`);
   const matchObj = m || getMatch(f.id) || null;
   const hPart = getShootoutParticipants(f, matchObj, "home", r);
   const aPart = getShootoutParticipants(f, matchObj, "away", r);
   const hName = tn(f.home), aName = tn(f.away);
+  const kicksPerSide = clamp(Math.round(Number(opts?.kicksPerSide) || resolveMatchTieBreakerRule(f).shootoutKicks || 5), 1, 10);
   let h = 0, a = 0;
   let hTaken = 0, aTaken = 0;
   const kicks: any[] = [];
@@ -17245,18 +17609,18 @@ function shootout(f, m: any = null) {
       text
     });
   };
-  for (let roundNum = 1; roundNum <= 5; roundNum++) {
+  for (let roundNum = 1; roundNum <= kicksPerSide; roundNum++) {
     executeKick("home", roundNum);
-    const homeRemAfterH = 5 - hTaken;
-    const awayRemAfterH = 5 - aTaken;
+    const homeRemAfterH = kicksPerSide - hTaken;
+    const awayRemAfterH = kicksPerSide - aTaken;
     if (h - a > awayRemAfterH || a - h > homeRemAfterH) break;
     executeKick("away", roundNum);
-    const homeRemAfterA = 5 - hTaken;
-    const awayRemAfterA = 5 - aTaken;
+    const homeRemAfterA = kicksPerSide - hTaken;
+    const awayRemAfterA = kicksPerSide - aTaken;
     if (h - a > awayRemAfterA || a - h > homeRemAfterA) break;
   }
-  let sdRound = 6;
-  while (h === a && sdRound <= 20) {
+  let sdRound = kicksPerSide + 1;
+  while (h === a && sdRound <= kicksPerSide + 15) {
     executeKick("home", sdRound);
     executeKick("away", sdRound);
     sdRound++;
@@ -17281,9 +17645,14 @@ function appendShootoutEventsToMatch(f: any, m: any, emitLive = false) {
   if (m.events.some((ev: any) => String(ev.type || "").startsWith("pen_shootout"))) return;
   const hScore = f.hg ?? 0;
   const aScore = f.ag ?? 0;
-  const ftEv = m.events.find((ev: any) => ev.type === "fulltime");
+  const ftEv = [...m.events].reverse().find((ev: any) => ev.type === "fulltime");
   const schedMin = resolveMatchFormat(f).totalMinutes || 90;
   const baseMin = ftEv ? Math.max(schedMin, Number(ftEv.min) || schedMin) : schedMin;
+  const playedEt = !!(m?.ctx?.playedExtraTime || (resolveMatchTieBreakerRule(f).hasExtraTime && baseMin > schedMin));
+  const phaseLabel = playedEt ? "Дополнительное время" : "Основное время";
+  const introText = hScore === aScore
+    ? `${phaseLabel} завершилось вничью (${hScore}:${aScore}). Победитель определится в серии послематчевых пенальти!`
+    : `Матч завершён со счётом ${hScore}:${aScore}, но по регламенту встречи проводится послематчевая серия пенальти!`;
   let idx = m.events.length;
   const startEv = {
     i: idx++,
@@ -17295,7 +17664,7 @@ function appendShootoutEventsToMatch(f: any, m: any, emitLive = false) {
     pids: [],
     score: [hScore, aScore],
     penKickLabel: "Серия",
-    text: `Основное время завершилось вничью (${hScore}:${aScore}). Победитель определится в серии послематчевых пенальти!`
+    text: introText
   };
   m.events.push(startEv);
   if (emitLive) pushLive(f.id, { type: "event", e: startEv });
@@ -17323,8 +17692,12 @@ function appendShootoutEventsToMatch(f: any, m: any, emitLive = false) {
 function tgShootout(f: any) {
   if (!f?.pen?.kicks?.length) return;
   const hName = esc(tn(f.home)), aName = esc(tn(f.away));
+  const hS = f.hg ?? 0, aS = f.ag ?? 0;
+  const penLead = hS === aS
+    ? `Игра завершилась вничью (${hS}:${aS}). Судьба матча решается в серии 11-метровых!`
+    : `Матч завершился со счётом ${hS}:${aS} — команды бьют серию пенальти по условиям встречи!`;
   tgComp(f?.comp || "cup", `🥅 <b>СЕРИЯ ПЕНАЛЬТИ! ${hName} — ${aName}</b>
-Основное время завершилось вничью (${f.hg ?? 0}:${f.ag ?? 0}). Судьба матча решается в серии 11-метровых!`, { ruleKey: "liveMatchEvents", kind: "shootout" });
+${penLead}`, { ruleKey: "liveMatchEvents", kind: "shootout" });
   for (const k of f.pen.kicks) {
     const icon = k.scored ? "✅" : k.outcome === "saved" ? "🧤" : "❌";
     const verdict = k.scored ? "ГОЛ!" : k.outcome === "saved" ? "ВРАТАРЬ ТАЩИТ!" : k.outcome === "post" ? "ШТАНГА / ПЕРЕКЛАДИНА!" : "МИМО!";
@@ -20704,6 +21077,11 @@ var pubFx = (f) => {
     friendlyVarMode: f.friendlyVarMode || null,
     varEnabled: typeof f.varEnabled === "boolean" ? f.varEnabled : null,
     varInfo: resolveMatchVarRule(f),
+    friendlyTieBreaker: f.friendlyTieBreaker || null,
+    friendlyExtraFormat: f.friendlyExtraFormat || null,
+    friendlyGoldenGoal: !!f.friendlyGoldenGoal,
+    friendlyShootoutKicks: f.friendlyShootoutKicks || null,
+    tieBreakerRule: resolveMatchTieBreakerRule(f),
     comp: f.comp,
     season: f.season || S(),
     cupPath: f.cupPath || (f.comp === "cup" && f.round != null ? Number(f.round) <= 6 ? "rpl_group" : "regions_qual" : null),
@@ -21301,6 +21679,7 @@ app.get("/api/match/:id", async (req, res) => {
         motiv: m.ctx.motiv,
         subRules: m.ctx.subRules || resolveMatchSubRules(f),
         matchFormat: m.ctx.matchFormat || resolveMatchFormat(f),
+        tieBreakerRule: m.ctx.tieBreakerRule || resolveMatchTieBreakerRule(f),
         friendlyConditions: m.ctx.friendlyConditions || f.friendlyConditions || f.note || ""
       };
       if (isAdm) {
@@ -21328,6 +21707,7 @@ app.get("/api/match/:id", async (req, res) => {
       motiv: { home: motivText(f.home, f, HName), away: motivText(f.away, f, AName) },
       subRules: resolveMatchSubRules(f),
       matchFormat: resolveMatchFormat(f),
+      tieBreakerRule: resolveMatchTieBreakerRule(f),
       friendlyConditions: f.friendlyConditions || f.note || ""
     };
   }
@@ -28108,7 +28488,10 @@ app.post("/api/admin/fixture", admin, (req, res) => {
     f.status = "done";
     f.st = null;
     const hadPenManual = !!f.pen;
-    if ((f.comp === "cup" || f.comp === "supercup") && f.hg === f.ag) f.pen = shootout(f, getMatch(f.id));
+    const tbManual = resolveMatchTieBreakerRule(f);
+    if (!f.pen && ((f.hg === f.ag && tbManual.hasShootout) || tbManual.alwaysShootout)) {
+      f.pen = shootout(f, getMatch(f.id), { kicksPerSide: tbManual.shootoutKicks });
+    }
     checkPlayoffShootout(f, getMatch(f.id));
     if (!hadPenManual && f.pen?.kicks?.length) {
       tgShootout(f);
@@ -30691,6 +31074,11 @@ var pubFriendly = (r) => {
     matchFormatInfo: resolveMatchFormat(r),
     varMode: r.varMode || "auto",
     varInfo: resolveMatchVarRule(r),
+    tieBreakerMode: r.tieBreakerMode || "auto",
+    extraFormat: r.extraFormat || "2x15",
+    goldenGoal: !!r.goldenGoal,
+    shootoutKicks: r.shootoutKicks || 5,
+    tieBreakerInfo: resolveMatchTieBreakerRule(r),
     budget: r.budget,
     formattedBudget: isIntra ? "Бесплатный спарринг" : fmtEuro(r.budget),
     nationalType: r.nationalType || "",
@@ -30815,6 +31203,10 @@ function tryFinalizeFriendly(r) {
     friendlyMatchFormat: r.matchFormat || void 0,
     friendlyVarMode: r.varMode || void 0,
     varEnabled: resolveMatchVarRule(r).enabled,
+    friendlyTieBreaker: r.tieBreakerMode || void 0,
+    friendlyExtraFormat: r.extraFormat || void 0,
+    friendlyGoldenGoal: r.goldenGoal ? true : void 0,
+    friendlyShootoutKicks: r.shootoutKicks || void 0,
     nationalType: r.nationalType || void 0,
     neutralField: place.neutral,
     stadium: place.neutral ? `${place.stadium} (\u043D\u0435\u0439\u0442\u0440\u0430\u043B\u044C\u043D\u043E\u0435 \u043F\u043E\u043B\u0435${place.city ? ", \u0433. " + place.city : ""})` : place.stadium,
@@ -30841,15 +31233,17 @@ function tryFinalizeFriendly(r) {
     const sr = resolveMatchSubRules(f);
     const mf = resolveMatchFormat(f);
     const vr = resolveMatchVarRule(f);
+    const tb = resolveMatchTieBreakerRule(f);
     const fmtLine = mf.isCustom ? `\n⏱ Формат матча: <b>${esc(mf.label)}</b>` : "";
     const subFmtLine = sr.isCustom ? `\n🔄 Замены: <b>${esc(sr.label)}</b>` : "";
+    const tbLine = tb.isCustom ? `\n⚖️ При ничьей: <b>${esc(tb.label)}</b>` : "";
     const varLine = `\n📺 VAR: <b>${esc(vr.shortLabel)}</b>`;
     if (isIntra) {
       tg(`⚽ <b>Внутрикомандный спарринг назначен</b>
 «${esc(sideDisplayName(f, "home"))}» — «${esc(sideDisplayName(f, "away"))}»
 🎮 Игровое: <b>${esc(gameDate)} ${esc(gameTime)}</b>
 ⏰ Настоящее: <b>${esc(realDate)} ${esc(realTime)} МСК</b>
-🏟 ${esc(place.stadium)}${fmtLine}${subFmtLine}${varLine}
+🏟 ${esc(place.stadium)}${fmtLine}${subFmtLine}${tbLine}${varLine}
 <i>${esc(r.conditions)}</i>`);
     } else {
       tg(`\u{1F91D} <b>\u0422\u043E\u0432\u0430\u0440\u0438\u0449\u0435\u0441\u043A\u0438\u0439 \u043C\u0430\u0442\u0447 \u0441\u043E\u0433\u043B\u0430\u0441\u043E\u0432\u0430\u043D</b>
@@ -30857,7 +31251,7 @@ function tryFinalizeFriendly(r) {
 \u{1F3AE} \u0418\u0433\u0440\u043E\u0432\u043E\u0435: <b>${esc(gameDate)} ${esc(gameTime)}</b>
 \u23F0 \u041D\u0430\u0441\u0442\u043E\u044F\u0449\u0435\u0435: <b>${esc(realDate)} ${esc(realTime)} \u041C\u0421\u041A</b>
 \u{1F3DF} ${esc(place.stadium)}
-\u{1F4B6} \u0411\u044E\u0434\u0436\u0435\u0442 \u043C\u0430\u0442\u0447\u0430: <b>${esc(fmtEuro(budget))}</b>${fmtLine}${subFmtLine}${varLine}
+\u{1F4B6} \u0411\u044E\u0434\u0436\u0435\u0442 \u043C\u0430\u0442\u0447\u0430: <b>${esc(fmtEuro(budget))}</b>${fmtLine}${subFmtLine}${tbLine}${varLine}
 <i>${esc(r.conditions)}</i>`);
     }
   } catch {
@@ -30953,6 +31347,7 @@ app.post("/api/club/friendly/intra/request", needClub, (req, res) => {
   const subFormat = parseFriendlySubFormatInput(b);
   const matchFormat = parseFriendlyMatchFormatInput(b);
   const varMode = normalizeVarMode(b.varMode);
+  const tbInput = parseFriendlyTieBreakerInput(b);
   const conditions = cleanTxt(b.conditions, 500) || `Внутрикомандный спарринг: ${homeLabel} против ${awayLabel}`;
   const r = {
     id: "fr_" + uid(),
@@ -30974,6 +31369,10 @@ app.post("/api/club/friendly/intra/request", needClub, (req, res) => {
     subFormat,
     matchFormat,
     varMode,
+    tieBreakerMode: tbInput.tieBreakerMode,
+    extraFormat: tbInput.extraFormat,
+    goldenGoal: tbInput.goldenGoal,
+    shootoutKicks: tbInput.shootoutKicks,
     budget: 0,
     needOpponentApproval: false,
     opponentApproval: "not_required",
@@ -30988,14 +31387,16 @@ app.post("/api/club/friendly/intra/request", needClub, (req, res) => {
     const sr = resolveMatchSubRules(r);
     const mf = resolveMatchFormat(r);
     const vr = resolveMatchVarRule(r);
+    const tb = resolveMatchTieBreakerRule(r);
     const fmtLine = mf.isCustom ? `\n⏱ Формат матча: <b>${esc(mf.label)}</b>` : "";
     const subFmtLine = sr.isCustom ? `\n🔄 Замены: <b>${esc(sr.label)}</b>` : "";
+    const tbLine = tb.isCustom ? `\n⚖️ При ничьей: <b>${esc(tb.label)}</b>` : "";
     const varLine = `\n📺 VAR: <b>${esc(vr.shortLabel)}</b>`;
     tg(`⚽ <b>Заявка на внутрикомандный спарринг</b>
 «${esc(A.name)} (${esc(homeLabel)})» — «${esc(A.name)} (${esc(awayLabel)})»
 🎮 Игровое: <b>${esc(gameDate)} ${esc(gameTime)}</b>
 ⏰ Настоящее: <b>${esc(realDate)} ${esc(realTime)} МСК</b>
-🏟 ${esc(friendlyPlace(r).stadium)}${fmtLine}${subFmtLine}${varLine}
+🏟 ${esc(friendlyPlace(r).stadium)}${fmtLine}${subFmtLine}${tbLine}${varLine}
 <i>${esc(conditions)}</i>
 Требуется решение администратора.`);
   } catch {
@@ -31072,6 +31473,7 @@ app.post("/api/club/friendly/request", needClub, (req, res) => {
   const subFormat = parseFriendlySubFormatInput(b);
   const matchFormat = parseFriendlyMatchFormatInput(b);
   const varMode = normalizeVarMode(b.varMode);
+  const tbInput = parseFriendlyTieBreakerInput(b);
   const conditions = cleanTxt(b.conditions, 500);
   if (conditions.length < 3) return fail(res, "\u041F\u0440\u043E\u043F\u0438\u0448\u0438\u0442\u0435 \u0443\u0441\u043B\u043E\u0432\u0438\u044F \u043C\u0430\u0442\u0447\u0430");
   const budget = Math.round(Number(b.budget));
@@ -31101,6 +31503,10 @@ app.post("/api/club/friendly/request", needClub, (req, res) => {
     subFormat,
     matchFormat,
     varMode,
+    tieBreakerMode: tbInput.tieBreakerMode,
+    extraFormat: tbInput.extraFormat,
+    goldenGoal: tbInput.goldenGoal,
+    shootoutKicks: tbInput.shootoutKicks,
     budget,
     needOpponentApproval: needClub2,
     opponentApproval: needClub2 ? "pending" : "not_required",
@@ -31115,15 +31521,17 @@ app.post("/api/club/friendly/request", needClub, (req, res) => {
     const sr = resolveMatchSubRules(r);
     const mf = resolveMatchFormat(r);
     const vr = resolveMatchVarRule(r);
+    const tb = resolveMatchTieBreakerRule(r);
     const fmtLine = mf.isCustom ? `\n⏱ Формат матча: <b>${esc(mf.label)}</b>` : "";
     const subFmtLine = sr.isCustom ? `\n🔄 Замены: <b>${esc(sr.label)}</b>` : "";
+    const tbLine = tb.isCustom ? `\n⚖️ При ничьей: <b>${esc(tb.label)}</b>` : "";
     const varLine = `\n📺 VAR: <b>${esc(vr.shortLabel)}</b>`;
     tg(`\u{1F91D} <b>\u0417\u0430\u044F\u0432\u043A\u0430 \u043D\u0430 \u0442\u043E\u0432\u0430\u0440\u0438\u0449\u0435\u0441\u043A\u0438\u0439 \u043C\u0430\u0442\u0447</b>
 \xAB${esc(A.name)}\xBB \u043F\u0440\u0438\u0433\u043B\u0430\u0448\u0430\u0435\u0442 \xAB${esc(B.name)}\xBB
 \u{1F3AE} \u0418\u0433\u0440\u043E\u0432\u043E\u0435: <b>${esc(gameDate)} ${esc(gameTime)}</b>
 \u23F0 \u041D\u0430\u0441\u0442\u043E\u044F\u0449\u0435\u0435: <b>${esc(realDate)} ${esc(realTime)} \u041C\u0421\u041A</b>
 \u{1F3DF} ${esc(pubFriendly(r).venueText)}
-\u{1F4B6} \u0411\u044E\u0434\u0436\u0435\u0442: <b>${esc(fmtEuro(budget))}</b>${fmtLine}${subFmtLine}${varLine}
+\u{1F4B6} \u0411\u044E\u0434\u0436\u0435\u0442: <b>${esc(fmtEuro(budget))}</b>${fmtLine}${subFmtLine}${tbLine}${varLine}
 <i>${esc(conditions)}</i>
 ${needClub2 ? "\u041D\u0443\u0436\u043D\u044B \u0441\u043E\u0433\u043B\u0430\u0441\u0438\u044F \u043A\u043B\u0443\u0431\u0430-\u0441\u043E\u043F\u0435\u0440\u043D\u0438\u043A\u0430 \u0438 \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430." : "\u0422\u0440\u0435\u0431\u0443\u0435\u0442\u0441\u044F \u0440\u0435\u0448\u0435\u043D\u0438\u0435 \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430."}`);
   } catch {
@@ -31171,6 +31579,7 @@ app.post("/api/club/friendly/national/request", needClub, (req, res) => {
   const subFormat = parseFriendlySubFormatInput(b);
   const matchFormat = parseFriendlyMatchFormatInput(b);
   const varMode = normalizeVarMode(b.varMode);
+  const tbInput = parseFriendlyTieBreakerInput(b);
   const conditions = cleanTxt(b.conditions, 500) || "Товарищеский матч со сборной России";
   if ((db.friendlyRequests ||= []).some((r2) => r2.status === "pending" && r2.clubId === A.id && r2.opponentId === B.id && (r2.gameDate || r2.date) === gameDate)) {
     return fail(res, "Такая заявка на эту игровую дату уже подана и ждёт решения");
@@ -31196,6 +31605,10 @@ app.post("/api/club/friendly/national/request", needClub, (req, res) => {
     subFormat,
     matchFormat,
     varMode,
+    tieBreakerMode: tbInput.tieBreakerMode,
+    extraFormat: tbInput.extraFormat,
+    goldenGoal: tbInput.goldenGoal,
+    shootoutKicks: tbInput.shootoutKicks,
     budget: 0,
     needOpponentApproval: false,
     opponentApproval: "not_required",
@@ -31210,10 +31623,12 @@ app.post("/api/club/friendly/national/request", needClub, (req, res) => {
     const sr = resolveMatchSubRules(r);
     const mf = resolveMatchFormat(r);
     const vr = resolveMatchVarRule(r);
+    const tb = resolveMatchTieBreakerRule(r);
     const fmtLine = mf.isCustom ? `\n⏱ Формат матча: <b>${esc(mf.label)}</b>` : "";
     const subFmtLine = sr.isCustom ? `\n🔄 Замены: <b>${esc(sr.label)}</b>` : "";
+    const tbLine = tb.isCustom ? `\n⚖️ При ничьей: <b>${esc(tb.label)}</b>` : "";
     const varLine = `\n📺 VAR: <b>${esc(vr.shortLabel)}</b>`;
-    tgComp("national", `🇷🇺 <b>Заявка на матч со сборной</b>\n«${esc(A.name)}» — «${esc(B.name)}»\n🎮 Игровое: <b>${esc(gameDate)} ${esc(gameTime)}</b>\n⏰ Настоящее: <b>${esc(realDate)} ${esc(realTime)} МСК</b>\n📺 Оплачено просмотрами рекламы: ${NT_FRIENDLY_REQUIRED_ADS}${fmtLine}${subFmtLine}${varLine}\n<i>${esc(conditions)}</i>`, { ruleKey: "transfersAndNews", kind: "nt_friendly" });
+    tgComp("national", `🇷🇺 <b>Заявка на матч со сборной</b>\n«${esc(A.name)}» — «${esc(B.name)}»\n🎮 Игровое: <b>${esc(gameDate)} ${esc(gameTime)}</b>\n⏰ Настоящее: <b>${esc(realDate)} ${esc(realTime)} МСК</b>\n📺 Оплачено просмотрами рекламы: ${NT_FRIENDLY_REQUIRED_ADS}${fmtLine}${subFmtLine}${tbLine}${varLine}\n<i>${esc(conditions)}</i>`, { ruleKey: "transfersAndNews", kind: "nt_friendly" });
   } catch {
   }
   res.json({ ok: 1, request: pubFriendly(r), message: `Заявка отправлена администратору. При отказе или отклонении на счёт клуба вернутся ${NT_FRIENDLY_REFUND_ADS} просмотров.`, ads: getNtFriendlyAdSummary(db, A.id) });

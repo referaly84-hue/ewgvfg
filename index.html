@@ -5543,8 +5543,12 @@ function drawMatch(app, id) {
   const motmTeamLogo = motmPlayer ? (motmPlayer.teamLogo || teamLogo(motmPlayer.teamId || motmPlayer.team)) : null;
 
   const mfHdr = (c && c.matchFormat) || f.matchFormat;
+  const tbHdr = (c && c.tieBreakerRule) || f.tieBreakerRule;
   const mfHdrHtml = (mfHdr && (f.comp === 'friendly_match' || f.comp === 'friendly' || f.comp === 'intra_squad' || f.intraSquad || mfHdr.isCustom))
     ? ` · <span class="tag" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;font-weight:700">⏱ ${e(mfHdr.label)}</span>`
+    : '';
+  const tbHdrHtml = (tbHdr && (f.comp === 'friendly_match' || f.comp === 'friendly' || f.comp === 'intra_squad' || f.intraSquad || tbHdr.isCustom) && tbHdr.mode !== 'none')
+    ? ` · <span class="tag" style="background:#fefce8;color:#854d0e;border-color:#fde047;font-weight:700">⚖️ ${e(tbHdr.shortLabel)}</span>`
     : '';
 
   app.innerHTML = `
@@ -5553,7 +5557,7 @@ function drawMatch(app, id) {
     <span class="muted small">${e(c ? c.comp + (c.roundLabel ? ' · ' + c.roundLabel : '') : f.label)}</span>
   </div>
   <div class="score">
-  <div class="meta">${e(c ? c.comp + ', ' + c.roundLabel : f.label)}${c && c.stadium ? ' · ' + e(c.stadium) : (f.stadium ? ' · ' + e(f.stadium) : '')}${f.neutralField ? ' · <span class="tag" style="background:#fef3c7;color:#92400e;border-color:#fde047;font-weight:700">Нейтральное поле</span>' : ''}${mfHdrHtml}</div>
+  <div class="meta">${e(c ? c.comp + ', ' + c.roundLabel : f.label)}${c && c.stadium ? ' · ' + e(c.stadium) : (f.stadium ? ' · ' + e(f.stadium) : '')}${f.neutralField ? ' · <span class="tag" style="background:#fef3c7;color:#92400e;border-color:#fde047;font-weight:700">Нейтральное поле</span>' : ''}${mfHdrHtml}${tbHdrHtml}</div>
   <div class="meta" style="font-size:12.5px;color:var(--muted);margin-top:2px;display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap">
     <span>🎮 Игровое: <b>${fmtD(f.gameDate || f.date)} ${f.gameTime || f.time || ''}</b></span> · 
     <span>⏰ Реальное: <b>${fmtD(f.realDate || f.date)} ${f.realTime ? f.realTime + ' МСК' : ''}</b></span>
@@ -5572,7 +5576,7 @@ function drawMatch(app, id) {
       <div class="tm">${e(f.awayName)}</div>
     </div>
   </div>
-  <div class="meta" id="sub">${f.status === 'live' ? '<span class="live-dot"></span>Идёт матч' : f.status === 'done' ? (f.tech ? '<span class="tag" style="background:#fef2f2;color:#991b1b;border-color:#fca5a5;font-weight:700">🚫 Техническое поражение</span>' : 'Матч завершён') + (f.pen ? ` · по пенальти ${f.pen.hg}:${f.pen.ag}` : '') : f.status === 'generating' || f.status === 'queued' ? 'Матч готовится…' : 'Матч ещё не начался'}</div>
+  <div class="meta" id="sub">${f.status === 'live' ? '<span class="live-dot"></span>Идёт матч' : f.status === 'done' ? (f.tech ? '<span class="tag" style="background:#fef2f2;color:#991b1b;border-color:#fca5a5;font-weight:700">🚫 Техническое поражение</span>' : 'Матч завершён') + (f.pen ? ` · ${(f.hg === f.ag) ? 'по пенальти' : 'серия пенальти'} ${f.pen.hg}:${f.pen.ag}` : '') : f.status === 'generating' || f.status === 'queued' ? 'Матч готовится…' : 'Матч ещё не начался'}</div>
   ${f.tech && f.note ? `<div style="margin-top:8px;font-size:13px;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:6px 12px;display:inline-block">${e(f.note)}</div>` : ''}
   ${S.me?.role === 'admin' ? `<div style="margin-top:10px;display:flex;justify-content:center;gap:8px;flex-wrap:wrap">${f.status === 'scheduled' ? `<button id="btn_start_match" class="btn" type="button" style="cursor:pointer;font-weight:700">▶ Начать игру</button>` : ''}<button id="btn_tech_defeat_match" class="btn alt sm" type="button" style="cursor:pointer;color:#b91c1c;border-color:rgba(185,28,28,0.4);font-weight:700">🚫 Тех. поражение</button></div>` : ''}
   ${c && c.weather ? `
@@ -10192,7 +10196,7 @@ async function pgClub(app) {
           ${e(r.venueText)}${r.venue === 'neutral' ? ` (${e(r.stadium)}${r.city ? ', ' + e(r.city) : ''})` : ''} · ${r.nationalType ? '📺 <b>100 просмотров рекламы</b>' : '💶 <b>' + e(r.formattedBudget) + '</b>'}
         </div>
         <div class="small">Условия: ${e(r.conditions)}</div>
-        ${(r.matchFormatInfo || r.subRules || r.varInfo) ? `<div class="small" style="margin-top:3px">⏱ Формат: <b>${e((r.matchFormatInfo || resolveClientMatchFormat(r)).label)}</b> · 🔄 Замены: <b>${e((r.subRules || resolveClientMatchSubRules(r)).label)}</b> · 📺 VAR: <b>${e((r.varInfo || resolveClientVarRule(r)).shortLabel)}</b></div>` : ''}
+        ${(r.matchFormatInfo || r.subRules || r.varInfo || r.tieBreakerInfo) ? `<div class="small" style="margin-top:3px">⏱ Формат: <b>${e((r.matchFormatInfo || resolveClientMatchFormat(r)).label)}</b> · 🔄 Замены: <b>${e((r.subRules || resolveClientMatchSubRules(r)).label)}</b> · ⚖️ При ничьей: <b>${e((r.tieBreakerInfo || resolveClientTieBreakerRule(r)).shortLabel)}</b> · 📺 VAR: <b>${e((r.varInfo || resolveClientVarRule(r)).shortLabel)}</b></div>` : ''}
         <div class="muted small" style="margin-top:4px">${r.intraSquad ? `Внутрикомандный спарринг · Админ: ${appr(r.adminApproval)} · клуб-соперник не требуется` : `Админ: ${appr(r.adminApproval)}${r.needOpponentApproval ? ` · «${e(r.opponentName)}»: ${appr(r.opponentApproval)}` : ` · ${e(r.opponentCompName)}: решает только админ`}`}</div>
         ${r.rejectReason && r.status !== 'approved' ? `<div class="small" style="color:#991b1b;margin-top:4px">${e(r.rejectReason)}</div>` : ''}
         <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px">
@@ -10335,7 +10339,7 @@ async function pgClub(app) {
             </div>
             <div class="small" style="margin:4px 0">💶 Бюджет матча: <b>${e(r.formattedBudget)}</b> (получит ваш клуб)</div>
             <div class="small">Условия: ${e(r.conditions)}</div>
-            ${(r.matchFormatInfo || r.subRules || r.varInfo) ? `<div class="small" style="margin-top:3px">⏱ Формат: <b>${e((r.matchFormatInfo || resolveClientMatchFormat(r)).label)}</b> · 🔄 Замены: <b>${e((r.subRules || resolveClientMatchSubRules(r)).label)}</b> · 📺 VAR: <b>${e((r.varInfo || resolveClientVarRule(r)).shortLabel)}</b></div>` : ''}
+            ${(r.matchFormatInfo || r.subRules || r.varInfo || r.tieBreakerInfo) ? `<div class="small" style="margin-top:3px">⏱ Формат: <b>${e((r.matchFormatInfo || resolveClientMatchFormat(r)).label)}</b> · 🔄 Замены: <b>${e((r.subRules || resolveClientMatchSubRules(r)).label)}</b> · ⚖️ При ничьей: <b>${e((r.tieBreakerInfo || resolveClientTieBreakerRule(r)).shortLabel)}</b> · 📺 VAR: <b>${e((r.varInfo || resolveClientVarRule(r)).shortLabel)}</b></div>` : ''}
             <div class="row" style="gap:8px;margin-top:8px">
               <button class="btn" data-fr-ok="${r.id}" ${frInCd ? 'disabled' : ''} style="font-variant-numeric:tabular-nums">${frInCd ? `<span data-fr-cd="${frCdTarget}">Перерыв ${fmtFrCd(frCdTarget - nowFr)}</span>` : 'Принять'}</button>
               <button class="btn sm" data-fr-no="${r.id}">Отклонить</button>
@@ -11997,9 +12001,10 @@ async function pgClub(app) {
     const subRulesCard = resolveClientMatchSubRules(f);
     const matchFmtCard = resolveClientMatchFormat(f);
     const varRuleCard = resolveClientVarRule(f);
+    const tbRuleCard = resolveClientTieBreakerRule(f);
     const isFriendlyCard = f.comp === 'friendly_match' || f.comp === 'friendly' || f.comp === 'intra_squad' || isIntra;
     const subFormatLine = isFriendlyCard
-      ? `<div class="muted small" style="margin-top:6px">⏱ <b>Формат:</b> ${e(matchFmtCard.label)} · 🔄 <b>Замены:</b> ${e(subRulesCard.label)} · 📺 <b>VAR:</b> ${e(varRuleCard.shortLabel)}${(f.friendlyConditions || f.note) ? ` · <i>${e(f.friendlyConditions || f.note)}</i>` : ''}</div>`
+      ? `<div class="muted small" style="margin-top:6px">⏱ <b>Формат:</b> ${e(matchFmtCard.label)} · 🔄 <b>Замены:</b> ${e(subRulesCard.label)} · ⚖️ <b>При ничьей:</b> ${e(tbRuleCard.shortLabel)} · 📺 <b>VAR:</b> ${e(varRuleCard.shortLabel)}${(f.friendlyConditions || f.note) ? ` · <i>${e(f.friendlyConditions || f.note)}</i>` : ''}</div>`
       : '';
     return `<div class="panel" data-f="${f.id}">
       <div class="row sp">
@@ -12399,7 +12404,13 @@ function resolveClientMatchFormat(f) {
     const mm = exp.match(/^([1-6])x(\d{1,3})$/);
     if (mm) return make(Number(mm[1]), Number(mm[2]), !(Number(mm[1]) === 2 && Number(mm[2]) === 45));
   }
-  const text = String(f?.friendlyConditions || f?.conditions || f?.note || '').toLowerCase().replace(/ё/g, 'е');
+  const rawText = String(f?.friendlyConditions || f?.conditions || f?.note || '').toLowerCase().replace(/ё/g, 'е');
+  if (!rawText) return make(2, 45, false);
+  let text = rawText
+    .replace(/(?:если|при|в\s+случае)\s+(?:ничь[а-я]*|ничейн[а-я]+\s+[а-я]+|равн[а-я]+\s+сч[её]т[а-я]*)\s*,?\s*(?:то\s+)?(?:(?:одп\.?|доп\.?|дополнительн[а-я]*|овертайм[а-я]*|экстра-?тайм[а-я]*|сразу\s+пенальти|сери[яию]\s+пенальти|пенальти|золот[а-я]+\s+гол|без\s+пенальти)[^,.;!\n]*)*/gi, ' ')
+    .replace(/(?:одп\.?|доп\.?|дополнительн[а-я]*|овертайм[а-я]*|экстра-?тайм[а-я]*)\s*(?:врем[а-я]*)?[^,.;!\n]*/gi, ' ')
+    .replace(/(?:сери[яию]\s+(?:послематчевых\s+)?пенальти|послематчев[а-я]*\s+пенальти|пенальти\s+в\s+любом\s+случае|по\s+\d{1,2}\s+(?:пенальти|удар[аов]*))[^,.;!\n]*/gi, ' ')
+    .replace(/\s+/g, ' ').trim();
   if (!text) return make(2, 45, false);
   const nxm = text.match(/\b([1-6])\s*[xх*]\s*(\d{1,3})\b/);
   if (nxm) return make(Number(nxm[1]), Number(nxm[2]), !(Number(nxm[1]) === 2 && clampN(Number(nxm[2]), 5, 90) === 45));
@@ -12441,6 +12452,107 @@ function resolveClientVarRule(f) {
   const sup = comp === 'rpl' || comp === 'supercup' || comp === 'playoff' || comp === 'playoff_rpl_fnl' || (comp === 'cup' && clientFixtureSupportsVar(f));
   return makeVar(sup ? 'on' : 'off', sup, false);
 }
+function resolveClientTieBreakerRule(f) {
+  const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const buildRule = (mode, epRaw, epmRaw, ggRaw, kicksRaw, isCustom) => {
+    const ep = clampN(Math.round(epRaw || 2), 1, 2);
+    const epm = clampN(Math.round(epmRaw || 15), 3, 30);
+    const etTotal = ep * epm;
+    const kicks = clampN(Math.round(kicksRaw || 5), 1, 10);
+    const hasExtraTime = mode === 'extra_then_penalties' || mode === 'extra_only';
+    const hasShootout = mode === 'extra_then_penalties' || mode === 'penalties' || mode === 'always_penalties';
+    const alwaysShootout = mode === 'always_penalties';
+    const etFmtLabel = ep === 1 ? `1×${epm} мин` : `2×${epm} (${etTotal} мин)`;
+    const kicksNote = kicks !== 5 ? ` (по ${kicks} уд.)` : '';
+    const ggNote = ggRaw ? ' · золотой гол' : '';
+    let label = 'При ничьей — ничья';
+    let shortLabel = 'Ничья (без доп.)';
+    if (mode === 'extra_then_penalties') {
+      label = `При ничьей — доп. время ${etFmtLabel}${ggNote}, затем пенальти${kicksNote}`;
+      shortLabel = `Доп. ${etFmtLabel}${ggNote} + пен.`;
+    } else if (mode === 'extra_only') {
+      label = `При ничьей — доп. время ${etFmtLabel}${ggNote} (без пенальти)`;
+      shortLabel = `Доп. ${etFmtLabel}${ggNote}`;
+    } else if (mode === 'penalties') {
+      label = `При ничьей — сразу серия пенальти${kicksNote}`;
+      shortLabel = `Сразу пенальти${kicksNote}`;
+    } else if (mode === 'always_penalties') {
+      label = `После матча — серия пенальти при любом счёте${kicksNote}`;
+      shortLabel = `Пенальти всегда${kicksNote}`;
+    } else if (mode === 'playoff') {
+      label = 'Плей-офф (пенальти по регламенту)';
+      shortLabel = 'Регламент плей-офф';
+    }
+    return {
+      mode,
+      hasExtraTime,
+      hasShootout,
+      alwaysShootout,
+      extraPeriodsCount: ep,
+      extraPeriodMinutes: epm,
+      extraTotalMinutes: etTotal,
+      goldenGoal: !!(hasExtraTime && ggRaw),
+      shootoutKicks: kicks,
+      isCustom: !!isCustom,
+      label,
+      shortLabel
+    };
+  };
+  if (f && f.tieBreakerRule && typeof f.tieBreakerRule === 'object' && 'hasExtraTime' in f.tieBreakerRule) {
+    return f.tieBreakerRule;
+  }
+  if (f && f.tieBreakerInfo && typeof f.tieBreakerInfo === 'object' && 'hasExtraTime' in f.tieBreakerInfo) {
+    return f.tieBreakerInfo;
+  }
+  const comp = String(f?.comp || '').trim().toLowerCase();
+  const isFriendlyLike = comp === 'friendly_match' || comp === 'friendly' || comp === 'intra_squad' || !!f?.intraSquad || !!f?.friendlyId || (!comp && f && ('conditions' in f || 'tieBreakerMode' in f || 'friendlyTieBreaker' in f));
+  if (!isFriendlyLike) {
+    if (comp === 'cup' || comp === 'supercup') return buildRule('penalties', 2, 15, false, 5, false);
+    if (comp === 'playoff' || comp === 'playoff_rpl_fnl') return buildRule('playoff', 2, 15, false, 5, false);
+    return buildRule('none', 2, 15, false, 5, false);
+  }
+  const rawText = String(f?.friendlyConditions || f?.conditions || f?.note || '').toLowerCase().replace(/ё/g, 'е');
+  const expMode = String(f?.friendlyTieBreaker ?? f?.tieBreakerMode ?? 'auto').trim().toLowerCase();
+  const expCode = String(f?.friendlyExtraFormat ?? f?.extraFormat ?? '').trim().toLowerCase().replace(/х/g, 'x');
+  const codeMatch = expCode.match(/^([12])x(\d{1,2})$/);
+  let ep = codeMatch ? Number(codeMatch[1]) : (Number(f?.extraPeriods ?? f?.friendlyExtraPeriods) || 2);
+  let epm = codeMatch ? Number(codeMatch[2]) : (Number(f?.extraPeriodMinutes ?? f?.friendlyExtraPeriodMinutes) || 15);
+  let gg = Boolean(f?.friendlyGoldenGoal ?? f?.goldenGoal);
+  let kicks = Number(f?.friendlyShootoutKicks ?? f?.shootoutKicks);
+  kicks = Number.isFinite(kicks) && kicks > 0 ? clampN(Math.round(kicks), 1, 10) : 5;
+  const etClause = rawText.match(/(?:одп\.?|доп\.?|дополнительн[а-я]*|овертайм[а-я]*|экстра-?тайм[а-я]*)\s*(?:врем[а-я]*)?([^.;!\n]*)/i);
+  if (etClause && !codeMatch && !f?.extraPeriods && !f?.extraPeriodMinutes) {
+    const sub = String(etClause[1] || '');
+    const nxm = sub.match(/\b([12])\s*[xх*]\s*(\d{1,2})\b/) || sub.match(/\b([12])\s*(?:тайм(?:а|ов)?|по)\s*(?:по\s+)?(\d{1,2})\s*(?:мин[а-я]*|')?/);
+    if (nxm) {
+      ep = clampN(Number(nxm[1]), 1, 2);
+      epm = clampN(Number(nxm[2]), 3, 30);
+    } else {
+      const sMin = sub.match(/\b(\d{1,2})\s*(?:мин[а-я]*|')/);
+      if (sMin) {
+        const tot = clampN(Number(sMin[1]), 3, 60);
+        if (tot >= 20 && tot % 2 === 0) { ep = 2; epm = clampN(tot / 2, 3, 30); }
+        else { ep = 1; epm = clampN(tot, 3, 30); }
+      }
+    }
+  }
+  if (!gg && /(?:золот[а-я]+\s+гол|до\s+(?:первого|1-?го|одного)\s+гол[а]?|правил[оа]\s+золотого\s+гола)/i.test(rawText)) gg = true;
+  const km = rawText.match(/(?:по\s*(\d{1,2})\s*(?:пенальти|удар[аов]*)|сери[яи]\s+пенальти\s*(?:по|из)\s*(\d{1,2}))/i);
+  if (km && !(Number(f?.friendlyShootoutKicks ?? f?.shootoutKicks) > 0)) kicks = clampN(Number(km[1] || km[2]), 1, 10);
+  if (expMode && expMode !== 'auto') {
+    return buildRule(expMode, ep, epm, gg, kicks, expMode !== 'none');
+  }
+  if (!rawText) return buildRule('none', ep, epm, false, 5, false);
+  const hasAlwaysPenText = /(?:пенальти\s+в\s+любом\s+случае|сери[яи]\s+пенальти\s+(?:в\s+любом\s+случае|независимо\s+от\s+сч[её]та|после\s+матча\s+при\s+любом)|обязательн[а-я]+\s+сери[яи]\s+пенальти)/i.test(rawText);
+  const noPenText = /(?:без\s+(?:серии\s+)?пенальти|пенальти\s+не\s+(?:бь[юё]т|провод|нужн)|без\s+11-?метровых)/i.test(rawText);
+  const noEtText = /(?:без\s+(?:одп|доп\.?|дополнительн[а-я]*)\s*врем|сразу\s+(?:сери[яи]\s+)?пенальти|без\s+овертайм)/i.test(rawText);
+  const hasEtText = /(?:одп\.?\s*врем|доп\.?\s*врем|дополнительн[а-я]*\s+врем|овертайм|экстра-?тайм|золот[а-я]+\s+гол)/i.test(rawText);
+  const hasPenText = /(?:сери[яию]\s+(?:послематчевых\s+)?пенальти|послематчев[а-я]*\s+пенальти|сразу\s+пенальти|(?:если|при|в\s+случае)\s+(?:ничь[а-я]*|ничейн[а-я]+|равн[а-я]+\s+сч[её]т)[^.;!\n]{0,60}пенальти|по\s+\d{1,2}\s*(?:пенальти|удар[аов]*\s*(?:пенальти)?)|по\s+пенальти|11-?метров[а-я]*\s+сери)/i.test(rawText) || (hasEtText && /(?:затем|потом|далее|и)\s+пенальти/i.test(rawText));
+  if (hasAlwaysPenText) return buildRule('always_penalties', ep, epm, gg, kicks, true);
+  if (hasEtText && !noEtText) return buildRule(noPenText ? 'extra_only' : 'extra_then_penalties', ep, epm, gg, kicks, true);
+  if (hasPenText && !noPenText) return buildRule('penalties', ep, epm, false, kicks, true);
+  return buildRule('none', ep, epm, false, 5, false);
+}
 function renderFriendlyRulesControlsHtml(prefix, opts = {}) {
   const formatLabel = opts.formatLabel || 'Формат спарринга (таймы и длительность)';
   const subsAutoLabel = opts.subsAutoLabel || 'По тексту заметки (по умолчанию 5 / 3 окна)';
@@ -12448,7 +12560,7 @@ function renderFriendlyRulesControlsHtml(prefix, opts = {}) {
     <div style="background:var(--soft);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:10px">
       <div style="font-weight:700;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:6px">⚙️ Правила матча / спарринга</div>
       <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
-        <div style="flex:1.2;min-width:220px">
+        <div style="flex:1.2;min-width:210px">
           <label class="small" style="display:block">${e(formatLabel)}<br>
             <select id="${prefix}_match_format" style="width:100%">${CLIENT_MATCH_FORMAT_OPTIONS_HTML}</select>
           </label>
@@ -12457,7 +12569,7 @@ function renderFriendlyRulesControlsHtml(prefix, opts = {}) {
             <label class="small" style="flex:1;min-width:110px">Минут в тайме (5–90)<br><input type="number" id="${prefix}_mf_minutes" min="5" max="90" value="45" style="width:100%"></label>
           </div>
         </div>
-        <div style="flex:1.2;min-width:220px">
+        <div style="flex:1.2;min-width:210px">
           <label class="small" style="display:block">Формат замен<br>
             <select id="${prefix}_subs_mode" style="width:100%">${buildClientSubOptionsHtml(subsAutoLabel)}</select>
           </label>
@@ -12470,7 +12582,29 @@ function renderFriendlyRulesControlsHtml(prefix, opts = {}) {
             </div>
           </div>
         </div>
-        <div style="flex:0.85;min-width:190px">
+        <div style="flex:1.1;min-width:210px">
+          <label class="small" style="display:block">При ничьей / пенальти<br>
+            <select id="${prefix}_tie_breaker" style="width:100%">
+              <option value="auto">📝 По тексту условий (по умолч. ничья)</option>
+              <option value="none">🤝 Ничья (без доп. времени и пенальти)</option>
+              <option value="extra_then_penalties">⏱ Доп. время + серия пенальти</option>
+              <option value="extra_only">⏱ Только доп. время (без пенальти)</option>
+              <option value="penalties">🥅 Сразу серия пенальти</option>
+              <option value="always_penalties">🎯 Серия пенальти при любом счёте</option>
+            </select>
+          </label>
+          <div id="${prefix}_tb_custom_row" class="row" style="display:none;gap:8px;flex-wrap:wrap;margin-top:6px;padding:8px;background:#fff;border:1px dashed #93c5fd;border-radius:6px;align-items:flex-end">
+            <div id="${prefix}_tb_et_fields" class="row" style="gap:8px;flex-wrap:wrap;width:100%">
+              <label class="small" style="flex:1;min-width:95px">Доп. таймов<br><select id="${prefix}_tb_ep" style="width:100%"><option value="2">2 тайма</option><option value="1">1 тайм</option></select></label>
+              <label class="small" style="flex:1;min-width:100px">Мин. в доп. тайме (3–30)<br><input type="number" id="${prefix}_tb_epm" min="3" max="30" value="15" style="width:100%"></label>
+              <label class="small" style="width:100%;display:inline-flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="${prefix}_tb_gg"> 🥇 Правило золотого гола (до 1-го гола в доп. время)</label>
+            </div>
+            <div id="${prefix}_tb_pen_fields" style="width:100%">
+              <label class="small" style="display:block">Ударов в серии пенальти на команду (1–10)<br><input type="number" id="${prefix}_tb_kicks" min="1" max="10" value="5" style="width:100%;max-width:120px"></label>
+            </div>
+          </div>
+        </div>
+        <div style="flex:0.85;min-width:180px">
           <label class="small" style="display:block">Система VAR<br>
             <select id="${prefix}_var_mode" style="width:100%">
               <option value="off">🚫 Без VAR (выключен)</option>
@@ -12480,6 +12614,7 @@ function renderFriendlyRulesControlsHtml(prefix, opts = {}) {
           </label>
         </div>
       </div>
+      <div class="muted small" style="margin-top:6px">💡 В поле условий ниже можно написать любые особые правила (например: «если ничья — доп. время 2 по 10», «без карточек», «без офсайдов», «золотой гол», «пенальти в любом случае») — они учитываются в симуляции.</div>
       <div id="${prefix}_rules_preview" class="small" style="margin-top:8px;padding:6px 10px;border-radius:6px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a"></div>
     </div>
   `;
@@ -12496,6 +12631,11 @@ function readFriendlyRulesPayload(rootEl, prefix) {
   const customMaxSubs = Math.max(0, Math.min(30, Math.round(Number(g(`#${prefix}_sub_max`)?.value ?? 5))));
   const customMaxWindows = Math.max(1, Math.min(30, Math.round(Number(g(`#${prefix}_sub_win`)?.value || 3))));
   const varMode = g(`#${prefix}_var_mode`)?.value || 'off';
+  const tieBreakerMode = g(`#${prefix}_tie_breaker`)?.value || 'auto';
+  const extraPeriods = Math.max(1, Math.min(2, Math.round(Number(g(`#${prefix}_tb_ep`)?.value || 2) || 2)));
+  const extraPeriodMinutes = Math.max(3, Math.min(30, Math.round(Number(g(`#${prefix}_tb_epm`)?.value || 15) || 15)));
+  const goldenGoal = !!g(`#${prefix}_tb_gg`)?.checked;
+  const shootoutKicks = Math.max(1, Math.min(10, Math.round(Number(g(`#${prefix}_tb_kicks`)?.value || 5) || 5)));
   return {
     matchFormat: mfVal,
     customPeriods: mfVal === 'custom' ? mfPeriods : undefined,
@@ -12505,7 +12645,12 @@ function readFriendlyRulesPayload(rootEl, prefix) {
     subUnlimited: subVal === 'custom' ? subUnlimited : undefined,
     customMaxWindows: subVal === 'custom' && !winUnlimited ? customMaxWindows : undefined,
     winUnlimited: subVal === 'custom' ? winUnlimited : undefined,
-    varMode
+    varMode,
+    tieBreakerMode,
+    extraPeriods,
+    extraPeriodMinutes,
+    goldenGoal,
+    shootoutKicks
   };
 }
 function bindFriendlyRulesControls(rootEl, prefix, condSelector) {
@@ -12521,6 +12666,14 @@ function bindFriendlyRulesControls(rootEl, prefix, condSelector) {
   const subWinEl = g(`#${prefix}_sub_win`);
   const subUnlimEl = g(`#${prefix}_sub_unlim`);
   const winUnlimEl = g(`#${prefix}_sub_win_unlim`);
+  const tbSel = g(`#${prefix}_tie_breaker`);
+  const tbCustomRow = g(`#${prefix}_tb_custom_row`);
+  const tbEtFields = g(`#${prefix}_tb_et_fields`);
+  const tbPenFields = g(`#${prefix}_tb_pen_fields`);
+  const tbEpEl = g(`#${prefix}_tb_ep`);
+  const tbEpmEl = g(`#${prefix}_tb_epm`);
+  const tbGgEl = g(`#${prefix}_tb_gg`);
+  const tbKicksEl = g(`#${prefix}_tb_kicks`);
   const varSel = g(`#${prefix}_var_mode`);
   const previewEl = g(`#${prefix}_rules_preview`);
   const condEl = condSelector ? g(condSelector) : null;
@@ -12532,6 +12685,12 @@ function bindFriendlyRulesControls(rootEl, prefix, condSelector) {
     const isZeroSubs = isSubCustom && !subUnlimEl?.checked && Number(subMaxEl?.value ?? 5) === 0;
     if (subMaxEl) subMaxEl.disabled = !!subUnlimEl?.checked;
     if (subWinEl) subWinEl.disabled = !!winUnlimEl?.checked || isZeroSubs;
+    const tbVal = tbSel?.value || 'auto';
+    const showEtFields = tbVal === 'extra_then_penalties' || tbVal === 'extra_only';
+    const showPenFields = tbVal === 'extra_then_penalties' || tbVal === 'penalties' || tbVal === 'always_penalties';
+    if (tbCustomRow) tbCustomRow.style.display = (showEtFields || showPenFields) ? 'flex' : 'none';
+    if (tbEtFields) tbEtFields.style.display = showEtFields ? 'flex' : 'none';
+    if (tbPenFields) tbPenFields.style.display = showPenFields ? 'block' : 'none';
     if (previewEl) {
       const payload = readFriendlyRulesPayload(rootEl, prefix);
       const fake = {
@@ -12545,18 +12704,24 @@ function bindFriendlyRulesControls(rootEl, prefix, condSelector) {
         customMaxWindows: payload.customMaxWindows,
         winUnlimited: payload.winUnlimited,
         varMode: payload.varMode,
+        tieBreakerMode: payload.tieBreakerMode,
+        extraPeriods: payload.extraPeriods,
+        extraPeriodMinutes: payload.extraPeriodMinutes,
+        goldenGoal: payload.goldenGoal,
+        shootoutKicks: payload.shootoutKicks,
         conditions: condEl?.value || ''
       };
       const mf = resolveClientMatchFormat(fake);
       const sr = resolveClientMatchSubRules(fake);
+      const tb = resolveClientTieBreakerRule(fake);
       const vr = resolveClientVarRule(fake);
       const rawP = Number(mfPeriodsEl?.value || 2);
       const rawM = Number(mfMinutesEl?.value || 45);
       const cappedNote = (isMfCustom && rawP * rawM > 240) ? ` <span style="color:#b45309">(ограничено до макс. 240 мин)</span>` : '';
-      previewEl.innerHTML = `<b>Итог:</b> ⏱ ${e(mf.label)}${cappedNote} · 🔄 ${e(sr.label)} · 📺 ${e(vr.label)}`;
+      previewEl.innerHTML = `<b>Итог:</b> ⏱ ${e(mf.label)}${cappedNote} · 🔄 ${e(sr.label)} · ⚖️ ${e(tb.label)} · 📺 ${e(vr.label)}`;
     }
   };
-  [mfSel, mfPeriodsEl, mfMinutesEl, subSel, subMaxEl, subWinEl, subUnlimEl, winUnlimEl, varSel, condEl].forEach(el => {
+  [mfSel, mfPeriodsEl, mfMinutesEl, subSel, subMaxEl, subWinEl, subUnlimEl, winUnlimEl, tbSel, tbEpEl, tbEpmEl, tbGgEl, tbKicksEl, varSel, condEl].forEach(el => {
     if (!el) return;
     el.addEventListener('change', sync);
     if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') el.addEventListener('input', sync);
@@ -13078,6 +13243,7 @@ function lineupForm(box, f, c, withT, app) {
   const subRules = resolveClientMatchSubRules(f);
   const matchFmt = resolveClientMatchFormat(f);
   const varRule = resolveClientVarRule(f);
+  const tbRule = resolveClientTieBreakerRule(f);
   const maxMatchMin = Math.max(5, Number(matchFmt?.totalMinutes || 90));
   const isRpl = !isFriendlyComp && (f.comp === 'rpl' || f.comp === 'fnl' || f.comp === 'cup' || f.comp === 'supercup' || c.team.comp === 'rpl' || c.team.comp === 'fnl');
   const limit = c.legionLimit || { inSquad: 12, onPitch: 7, label: '12+7' };
@@ -13155,7 +13321,7 @@ function lineupForm(box, f, c, withT, app) {
       : '');
 
   box.innerHTML = `<div class="lineup-lock-notice" style="display:none;margin:0 0 10px;padding:8px 12px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:12.5px;font-weight:600">🔒 До начала матча осталось менее 10 минут — вносить правки в состав и тактику уже нельзя (доступен только просмотр).</div>
-  ${(isFriendlyComp || subRules.isCustom || matchFmt.isCustom || varRule.isCustom) ? `<div style="margin:0 0 10px;padding:8px 12px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;font-size:12.5px">⏱ <b>Формат матча:</b> ${e(matchFmt.label)} · 🔄 <b>Замены:</b> ${e(subRules.label)} · 📺 <b>VAR:</b> ${e(varRule.shortLabel)}${(f.friendlyConditions || f.note) ? ` · <span class="muted">${e(f.friendlyConditions || f.note)}</span>` : ''}</div>` : ''}
+  ${(isFriendlyComp || subRules.isCustom || matchFmt.isCustom || varRule.isCustom || tbRule.isCustom) ? `<div style="margin:0 0 10px;padding:8px 12px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;font-size:12.5px">⏱ <b>Формат матча:</b> ${e(matchFmt.label)} · 🔄 <b>Замены:</b> ${e(subRules.label)} · ⚖️ <b>При ничьей:</b> ${e(tbRule.shortLabel)} · 📺 <b>VAR:</b> ${e(varRule.shortLabel)}${(f.friendlyConditions || f.note) ? ` · <span class="muted">${e(f.friendlyConditions || f.note)}</span>` : ''}</div>` : ''}
   <label>Схема</label><input class="fm" value="${e(L.formation || '4-3-3')}" style="max-width:140px">
   <div class="row sp" style="gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 6px">
     <label style="margin:0">Состав: выберите 11 в старт и до ${subRules.maxBench > 12 ? subRules.maxBench : 9} на скамейку <span class="muted small" data-cnt></span></label>
@@ -13842,6 +14008,7 @@ function intraLineupForm(box, f, c, withT, app) {
   const subRules = resolveClientMatchSubRules(f);
   const matchFmt = resolveClientMatchFormat(f);
   const varRule = resolveClientVarRule(f);
+  const tbRule = resolveClientTieBreakerRule(f);
   const maxMatchMin = Math.max(5, Number(matchFmt?.totalMinutes || 90));
   const presets = Array.isArray(c.tacticPresets) ? c.tacticPresets : [];
   const hLbl = f.homeLabel || 'Основа';
@@ -13946,7 +14113,7 @@ function intraLineupForm(box, f, c, withT, app) {
 
   box.innerHTML = `
     <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
-      <div style="margin:0 0 10px;padding:8px 12px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;font-size:12.5px">⏱ <b>Формат спарринга:</b> ${e(matchFmt.label)} · 🔄 <b>Замены:</b> ${e(subRules.label)} · 📺 <b>VAR:</b> ${e(varRule.shortLabel)}${(f.friendlyConditions || f.note) ? ` · <span class="muted">${e(f.friendlyConditions || f.note)}</span>` : ''}</div>
+      <div style="margin:0 0 10px;padding:8px 12px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;font-size:12.5px">⏱ <b>Формат спарринга:</b> ${e(matchFmt.label)} · 🔄 <b>Замены:</b> ${e(subRules.label)} · ⚖️ <b>При ничьей:</b> ${e(tbRule.shortLabel)} · 📺 <b>VAR:</b> ${e(varRule.shortLabel)}${(f.friendlyConditions || f.note) ? ` · <span class="muted">${e(f.friendlyConditions || f.note)}</span>` : ''}</div>
       <div class="row sp" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">
         <div id="intra_summary_bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
         <div class="row" style="gap:6px;flex-wrap:wrap">
@@ -19130,7 +19297,7 @@ async function pgAdmin(app) {
   ${e(r.venueText)}${r.venue === 'neutral' ? ` (${e(r.stadium)}${r.city ? ', ' + e(r.city) : ''})` : ''} · ${r.nationalType ? `📺 <b>${r.adsSpent || 100} просм. рекламы</b>` : '💶 <b>' + e(r.formattedBudget) + '</b>'}
 </div>
 <div class="small">Условия: ${e(r.conditions)}</div>
-${(r.matchFormatInfo || r.subRules || r.varInfo) ? `<div class="small">⏱ Формат: <b>${e((r.matchFormatInfo || resolveClientMatchFormat(r)).label)}</b> · 🔄 Замены: <b>${e((r.subRules || resolveClientMatchSubRules(r)).label)}</b> · 📺 VAR: <b>${e((r.varInfo || resolveClientVarRule(r)).shortLabel)}</b></div>` : ''}
+${(r.matchFormatInfo || r.subRules || r.varInfo || r.tieBreakerInfo) ? `<div class="small">⏱ Формат: <b>${e((r.matchFormatInfo || resolveClientMatchFormat(r)).label)}</b> · 🔄 Замены: <b>${e((r.subRules || resolveClientMatchSubRules(r)).label)}</b> · ⚖️ При ничьей: <b>${e((r.tieBreakerInfo || resolveClientTieBreakerRule(r)).shortLabel)}</b> · 📺 VAR: <b>${e((r.varInfo || resolveClientVarRule(r)).shortLabel)}</b></div>` : ''}
 <div class="muted small">Админ: ${appr(r.adminApproval)} · Клуб-соперник: ${r.needOpponentApproval ? appr(r.opponentApproval) : (r.intraSquad ? 'не требуется (внутрикомандный)' : 'не требуется (не РПЛ)')}</div>`;
     ab.innerHTML = `
       <div class="panel">
