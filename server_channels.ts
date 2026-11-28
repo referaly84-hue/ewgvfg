@@ -539,8 +539,9 @@ export function createChannelsController(ctx: ChannelsServerContext) {
           (baseName && baseName.length >= 3
             ? allTeams.find((t) => String(t.name || "").trim().toLowerCase() === baseName)
             : null);
-        if (matched) {
-          resolved = resolveLocalFileBuffer(matched.logo || ctx.teamLogo(matched.id) || "");
+        const fallbackLogo = matched ? (ctx.teamLogo(matched.id) || matched.logo || "") : ctx.teamLogo(name);
+        if (fallbackLogo) {
+          resolved = resolveLocalFileBuffer(fallbackLogo);
         }
       }
       if (resolved && resolved.buf.length > 0) {
@@ -604,10 +605,10 @@ export function createChannelsController(ctx: ChannelsServerContext) {
           if (rDate !== dateStr) continue;
           const isHome = m.home !== false;
           const ruName = tt === "u21" ? "Россия U21" : "Россия";
-          const ruLogo = m.russiaLogo || "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg";
+          const ruLogo = m.russiaLogo || (tt === "u21" ? "/assets/aistudio/russia_russian-football-union.football-logos.cc_7af10f2f.svg" : "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg");
           const oppName = String(m.opponent || "Соперник");
           const oppTeam = (db.teams || []).find((t: any) => String(t.name || "").toLowerCase() === oppName.toLowerCase());
-          const oppLogo = oppTeam ? ctx.teamLogo(oppTeam.id) : (m.opponentLogo || "");
+          const oppLogo = (oppTeam ? ctx.teamLogo(oppTeam.id) : "") || m.opponentLogo || ctx.teamLogo(oppName) || "";
           const time = String(m.realTime || m.time || "19:00").slice(0, 5);
           const pairKey = `${dateStr}::${time}::${isHome ? ruName : oppName}::${isHome ? oppName : ruName}`;
           seenPairKeys.add(pairKey);
@@ -1060,7 +1061,7 @@ export function createChannelsController(ctx: ChannelsServerContext) {
   async function renderNationalSquadPosterPng(enriched: any, teamType: "main" | "u21", mode: "extended" | "final"): Promise<{ buffer: Buffer; svg: string }> {
     const isU21 = teamType === "u21";
     const list: any[] = mode === "final" ? (enriched.finalPlayers || []) : (enriched.extendedPlayers || []);
-    const rfLogo = await resolveLogoDataUri("/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg", "Россия", { primary: "#1d4ed8", secondary: "#dc2626" });
+    const rfLogo = await resolveLogoDataUri(isU21 ? "/assets/aistudio/russia_russian-football-union.football-logos.cc_7af10f2f.svg" : "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg", isU21 ? "Россия U21" : "Россия", { primary: "#1d4ed8", secondary: "#dc2626" });
 
     const groups = [
       { title: "ВРАТАРИ", accent: "#facc15", poses: new Set(["ВР"]) },

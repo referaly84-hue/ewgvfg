@@ -200,15 +200,93 @@ var OFFICIAL_SERVER_LOGOS = {
   "шумбрат": "/assets/aistudio/shumbrat_84622084.png",
   "кдв": "/assets/aistudio/FC_KDV_Tomsk_05a0950a.png",
   "кдв томск": "/assets/aistudio/FC_KDV_Tomsk_05a0950a.png",
+  "\u0441\u0431\u043E\u0440\u043D\u0430\u044F \u0440\u043E\u0441\u0441\u0438\u0438 u21": "/assets/aistudio/russia_russian-football-union.football-logos.cc_7af10f2f.svg",
+  "\u0440\u043E\u0441\u0441\u0438\u044F u21": "/assets/aistudio/russia_russian-football-union.football-logos.cc_7af10f2f.svg",
+  "\u0440\u043E\u0441\u0441\u0438\u044F (u21)": "/assets/aistudio/russia_russian-football-union.football-logos.cc_7af10f2f.svg",
+  "\u043C\u043E\u043B\u043E\u0434\u0451\u0436\u043D\u0430\u044F \u0441\u0431\u043E\u0440\u043D\u0430\u044F \u0440\u043E\u0441\u0441\u0438\u0438": "/assets/aistudio/russia_russian-football-union.football-logos.cc_7af10f2f.svg",
+  "\u043C\u043E\u043B\u043E\u0434\u0435\u0436\u043D\u0430\u044F \u0441\u0431\u043E\u0440\u043D\u0430\u044F \u0440\u043E\u0441\u0441\u0438\u0438": "/assets/aistudio/russia_russian-football-union.football-logos.cc_7af10f2f.svg",
+  "\u0441\u0431\u043E\u0440\u043D\u0430\u044F \u0440\u0444 u21": "/assets/aistudio/russia_russian-football-union.football-logos.cc_7af10f2f.svg",
+  "\u0440\u0444\u0441": "/assets/aistudio/russia_russian-football-union.football-logos.cc_7af10f2f.svg",
   "\u0441\u0431\u043E\u0440\u043D\u0430\u044F \u0440\u043E\u0441\u0441\u0438\u0438": "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg",
-  "\u0441\u0431\u043E\u0440\u043D\u0430\u044F": "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg"
+  "\u0440\u043E\u0441\u0441\u0438\u044F": "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg",
+  "\u0441\u0431\u043E\u0440\u043D\u0430\u044F \u0440\u0444": "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg",
+  "\u043D\u0430\u0446\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u0430\u044F \u0441\u0431\u043E\u0440\u043D\u0430\u044F": "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg",
+  "\u0441\u0431\u043E\u0440\u043D\u0430\u044F": "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg",
+  "реал сосьедад": "/assets/aistudio/spain_real-sociedad.football-logos.cc_10c1a648.svg",
+  "real sociedad": "/assets/aistudio/spain_real-sociedad.football-logos.cc_10c1a648.svg",
+  "монако": "/assets/aistudio/france_as-monaco.football-logos.cc_ec0384fe.svg",
+  "ас монако": "/assets/aistudio/france_as-monaco.football-logos.cc_ec0384fe.svg",
+  "as monaco": "/assets/aistudio/france_as-monaco.football-logos.cc_ec0384fe.svg",
+  "monaco": "/assets/aistudio/france_as-monaco.football-logos.cc_ec0384fe.svg",
+  "псж": "/assets/aistudio/france_paris-saint-germain.football-logos.cc_de4120a4.svg",
+  "пари сен-жермен": "/assets/aistudio/france_paris-saint-germain.football-logos.cc_de4120a4.svg",
+  "пари сен жермен": "/assets/aistudio/france_paris-saint-germain.football-logos.cc_de4120a4.svg",
+  "paris saint-germain": "/assets/aistudio/france_paris-saint-germain.football-logos.cc_de4120a4.svg",
+  "paris saint germain": "/assets/aistudio/france_paris-saint-germain.football-logos.cc_de4120a4.svg",
+  "psg": "/assets/aistudio/france_paris-saint-germain.football-logos.cc_de4120a4.svg",
+  "лига 1": "/assets/aistudio/france_ligue-1.football-logos.cc_656e36d8.svg",
+  "лига 1 (франция)": "/assets/aistudio/france_ligue-1.football-logos.cc_656e36d8.svg",
+  "ligue 1": "/assets/aistudio/france_ligue-1.football-logos.cc_656e36d8.svg",
+  "беларусь": "/assets/aistudio/belarus_belarus-national-team.football-logos.cc_cb7f665f.svg",
+  "белоруссия": "/assets/aistudio/belarus_belarus-national-team.football-logos.cc_cb7f665f.svg",
+  "сборная беларуси": "/assets/aistudio/belarus_belarus-national-team.football-logos.cc_cb7f665f.svg",
+  "сборная белоруссии": "/assets/aistudio/belarus_belarus-national-team.football-logos.cc_cb7f665f.svg",
+  "belarus": "/assets/aistudio/belarus_belarus-national-team.football-logos.cc_cb7f665f.svg",
+  "бангладеш": "/assets/aistudio/bangladesh_bangladesh-national-team.football-logos.cc_0f9a084d.svg",
+  "сборная бангладеш": "/assets/aistudio/bangladesh_bangladesh-national-team.football-logos.cc_0f9a084d.svg",
+  "bangladesh": "/assets/aistudio/bangladesh_bangladesh-national-team.football-logos.cc_0f9a084d.svg",
+  "бахрейн": "/assets/aistudio/bahrain_bahrain-national-team.football-logos.cc_3f85038e.svg",
+  "сборная бахрейна": "/assets/aistudio/bahrain_bahrain-national-team.football-logos.cc_3f85038e.svg",
+  "bahrain": "/assets/aistudio/bahrain_bahrain-national-team.football-logos.cc_3f85038e.svg",
+  "азербайджан": "/assets/aistudio/azerbaijan_azerbaijan-national-team.football-logos.cc_b2da518f.svg",
+  "сборная азербайджана": "/assets/aistudio/azerbaijan_azerbaijan-national-team.football-logos.cc_b2da518f.svg",
+  "azerbaijan": "/assets/aistudio/azerbaijan_azerbaijan-national-team.football-logos.cc_b2da518f.svg",
+  "армения": "/assets/aistudio/armenia_armenia-national-team.football-logos.cc_0c1d3cda.svg",
+  "сборная армении": "/assets/aistudio/armenia_armenia-national-team.football-logos.cc_0c1d3cda.svg",
+  "armenia": "/assets/aistudio/armenia_armenia-national-team.football-logos.cc_0c1d3cda.svg",
+  "бруней": "/assets/aistudio/brunei_brunei-national-team.football-logos.cc_c131387a.svg",
+  "сборная брунея": "/assets/aistudio/brunei_brunei-national-team.football-logos.cc_c131387a.svg",
+  "brunei": "/assets/aistudio/brunei_brunei-national-team.football-logos.cc_c131387a.svg",
+  "камбоджа": "/assets/aistudio/cambodia_cambodia-national-team.football-logos.cc_344dcf70.svg",
+  "сборная камбоджи": "/assets/aistudio/cambodia_cambodia-national-team.football-logos.cc_344dcf70.svg",
+  "cambodia": "/assets/aistudio/cambodia_cambodia-national-team.football-logos.cc_344dcf70.svg",
+  "индия": "/assets/aistudio/india_india-national-team.football-logos.cc_58d29868.svg",
+  "сборная индии": "/assets/aistudio/india_india-national-team.football-logos.cc_58d29868.svg",
+  "india": "/assets/aistudio/india_india-national-team.football-logos.cc_58d29868.svg",
+  "киргизия": "/assets/aistudio/kyrgyzstan_kyrgyzstan-national-team.football-logos.cc_5514d9cf.svg",
+  "кыргызстан": "/assets/aistudio/kyrgyzstan_kyrgyzstan-national-team.football-logos.cc_5514d9cf.svg",
+  "сборная киргизии": "/assets/aistudio/kyrgyzstan_kyrgyzstan-national-team.football-logos.cc_5514d9cf.svg",
+  "сборная кыргызстана": "/assets/aistudio/kyrgyzstan_kyrgyzstan-national-team.football-logos.cc_5514d9cf.svg",
+  "kyrgyzstan": "/assets/aistudio/kyrgyzstan_kyrgyzstan-national-team.football-logos.cc_5514d9cf.svg",
+  "япония": "/assets/aistudio/japan_japan-national-team.football-logos.cc_c0137033.svg",
+  "сборная японии": "/assets/aistudio/japan_japan-national-team.football-logos.cc_c0137033.svg",
+  "japan": "/assets/aistudio/japan_japan-national-team.football-logos.cc_c0137033.svg",
+  "китай": "/assets/aistudio/china_china-national-team.football-logos.cc_d5e589ad.svg",
+  "сборная китая": "/assets/aistudio/china_china-national-team.football-logos.cc_d5e589ad.svg",
+  "china": "/assets/aistudio/china_china-national-team.football-logos.cc_d5e589ad.svg",
+  "кндр": "/assets/aistudio/Flag_of_North_Korea.svg_204808ee.webp",
+  "сборная кндр": "/assets/aistudio/Flag_of_North_Korea.svg_204808ee.webp",
+  "северная корея": "/assets/aistudio/Flag_of_North_Korea.svg_204808ee.webp",
+  "сборная северной кореи": "/assets/aistudio/Flag_of_North_Korea.svg_204808ee.webp",
+  "north korea": "/assets/aistudio/Flag_of_North_Korea.svg_204808ee.webp",
+  "dprk": "/assets/aistudio/Flag_of_North_Korea.svg_204808ee.webp"
 };
+var OFFICIAL_SERVER_LOGO_ENTRIES = Object.entries(OFFICIAL_SERVER_LOGOS).sort((a, b) => b[0].length - a[0].length);
 function getTeamLogo(name, customLogo, comp) {
   if (customLogo && customLogo.trim()) return customLogo.trim();
-  if (!name) return "";
-  const key = String(name).trim().toLowerCase();
-  for (const [k, v] of Object.entries(OFFICIAL_SERVER_LOGOS)) {
-    if (key === k || key.includes(k) || k.includes(key)) return v;
+  if (!name && comp !== "national_u21") return "";
+  const key = String(name || "").trim().toLowerCase().replace(/ё/g, "е");
+  if ((comp === "national_u21" && (!key || /^(?:молодежная\s+)?(?:сборная\s+)?(?:россии|россия|рф)/.test(key))) || (/^(?:молодежная\s+)?(?:сборная\s+)?(?:россии|россия|рф)\b/.test(key) && /\bu-?21\b|молодеж/i.test(key))) {
+    return "/assets/aistudio/russia_russian-football-union.football-logos.cc_7af10f2f.svg";
+  }
+  if (OFFICIAL_SERVER_LOGOS[key]) return OFFICIAL_SERVER_LOGOS[key];
+  for (const [k, v] of OFFICIAL_SERVER_LOGO_ENTRIES) {
+    if (key.includes(k)) return v;
+  }
+  if (key.length >= 4) {
+    for (const [k, v] of OFFICIAL_SERVER_LOGO_ENTRIES) {
+      if (k.includes(key)) return v;
+    }
   }
   return "";
 }
@@ -7210,7 +7288,7 @@ var COMPS = [
   { id: "media_cup", name: "Winline \u041A\u0443\u0431\u043E\u043A \u041B\u0438\u0433\u0438 (2026)", type: "cup", tier: 5, level: "20 \u043A\u043E\u043C\u0430\u043D\u0434 \xB7 4 \u0433\u0440\u0443\u043F\u043F\u044B \u043F\u043E 5 \u043A\u043E\u043C\u0430\u043D\u0434", logo: "/logos/leagues/media.svg" },
   { id: "friendly_match", name: "\u0422\u043E\u0432\u0430\u0440\u0438\u0449\u0435\u0441\u043A\u0438\u0435 \u043C\u0430\u0442\u0447\u0438", type: "friendly", level: "\u0422\u043E\u0432\u0430\u0440\u0438\u0449\u0435\u0441\u043A\u0438\u0435 \u043C\u0430\u0442\u0447\u0438 \u0432 \u043F\u0430\u0443\u0437\u044B \u043D\u0430 \u0441\u0431\u043E\u0440\u043D\u044B\u0435", logo: "/logos/leagues/cup.svg" },
   { id: "national", name: "Сборная России", type: "national", level: "Международные и товарищеские матчи", logo: "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg" },
-  { id: "national_u21", name: "Сборная России U21", type: "national", level: "Молодёжная сборная до 21 года", logo: "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg" },
+  { id: "national_u21", name: "Сборная России U21", type: "national", level: "Молодёжная сборная до 21 года", logo: "/assets/aistudio/russia_russian-football-union.football-logos.cc_7af10f2f.svg" },
   { id: "europe", name: "\u0415\u0432\u0440\u043E\u043F\u0430 (\u0437\u0430\u0440\u0443\u0431\u0435\u0436\u043D\u044B\u0435 \u043A\u043B\u0443\u0431\u044B)", type: "abroad", tier: 99, level: "\u0415\u0432\u0440\u043E\u043F\u0435\u0439\u0441\u043A\u0438\u0435 \u0438 \u0437\u0430\u0440\u0443\u0431\u0435\u0436\u043D\u044B\u0435 \u043A\u043B\u0443\u0431\u044B", logo: "/logos/leagues/cup.svg" }
 ];
 var FRIENDLY_COMP = "friendly_match";
@@ -9038,7 +9116,8 @@ function load() {
       if (w.lat != null) t.lat = w.lat;
       if (w.lon != null) t.lon = w.lon;
     }
-    t.logo = getTeamLogo(t.name, t.logo, t.comp);
+    const officialBoot = getTeamLogo(t.name, null, t.comp);
+    t.logo = officialBoot && officialBoot.startsWith("/assets/") ? officialBoot : getTeamLogo(t.name, t.logo, t.comp);
   }
   for (const [name, w] of wantedMap.entries()) {
     if (!db.teams.some((t) => t.name === name)) {
@@ -9223,7 +9302,7 @@ var team = (id) => db.teams.find((t) => t.id === id);
 var tn = (id) => team(id)?.name || "?";
 var teamLogo = (id) => {
   const t = team(id);
-  if (!t) return getTeamLogo("?");
+  if (!t) return getTeamLogo(id);
   const official = getTeamLogo(t.name, null, t.comp);
   const raw = official.startsWith("/assets/") ? official : t.logo || official;
   return typeof raw === "string" && raw.startsWith("/public/assets/") ? raw.slice("/public".length) : raw;
@@ -9252,14 +9331,18 @@ function ensureNtTeams() {
   for (const [type, name] of defs) {
     const id = NT_TID[type];
     const compId = type === "u21" ? "national_u21" : "national";
+    const ntLogo = type === "u21"
+      ? "/assets/aistudio/russia_russian-football-union.football-logos.cc_7af10f2f.svg"
+      : "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg";
     let t = db.teams.find((x) => x.id === id);
     if (!t) {
-      t = { id, name, comp: compId, city: "Москва", country: "Россия", lat: null, lon: null, stadium: type === "u21" ? "«Арена Химки»" : "БСА «Лужники»", logo: "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg", national: type };
+      t = { id, name, comp: compId, city: "Москва", country: "Россия", lat: null, lon: null, stadium: type === "u21" ? "«Арена Химки»" : "БСА «Лужники»", logo: ntLogo, national: type };
       db.teams.push(t);
       ch = true;
     } else {
       if (t.national !== type) { t.national = type; ch = true; }
       if (t.comp !== compId) { t.comp = compId; ch = true; }
+      if (!t.logo || t.logo !== ntLogo) { t.logo = ntLogo; ch = true; }
     }
   }
   return ch;
@@ -9311,7 +9394,20 @@ var FOREIGN_NT_NAME_BANKS: Record<string, { capital: string; stadium: string; co
   "эквадор": { capital: "Кито", stadium: "Стадион «Родриго Пас Дельгадо»", coach: "Себастьян Беккасесе", first: ["Эрнан", "Эннер", "Мойсес", "Пьеро", "Виллиан", "Первис", "Анхело", "Алан", "Гонсало", "Кевин", "Феликс", "Карлос"], last: ["Галиндес", "Валенсия", "Кайседо", "Инкапье", "Пачо", "Эступиньян", "Пресиадо", "Франко", "Плата", "Родригес", "Торрес", "Груэсо"] },
   "казахстан": { capital: "Астана", stadium: "«Астана Арена»", coach: "Али Алиев", first: ["Игорь", "Нуралы", "Бахтиёр", "Асхат", "Максим", "Ислам", "Ян", "Александр", "Эльхан", "Абат", "Рамазан", "Марат"], last: ["Шацкий", "Алип", "Зайнутдинов", "Тагыберген", "Самородов", "Чесноков", "Вороговский", "Марочкин", "Астанов", "Аймбетов", "Оразов", "Быстров"] },
   "турция": { capital: "Анкара", stadium: "Стадион «Эрьяман»", coach: "Винченцо Монтелла", first: ["Мерт", "Хакан", "Арда", "Кенан", "Керем", "Оркун", "Мерих", "Чаглар", "Ферди", "Барыш", "Исмаил", "Юнус"], last: ["Гюнок", "Чалханоглу", "Гюлер", "Йылдыз", "Актюркоглу", "Кёкчю", "Демирал", "Сёюнджю", "Кадыоглу", "Йылмаз", "Юксек", "Акгюн"] },
-  "египет": { capital: "Каир", stadium: "Каирский международный стадион", coach: "Хоссам Хассан", first: ["Мохамед", "Омар", "Махмуд", "Ахмед", "Рами", "Марван", "Имам", "Тарек", "Хамди", "Мостафа", "Яссер", "Халид"], last: ["Салах", "Мармуш", "Трезеге", "Зизо", "Рабиа", "Аттия", "Ашур", "Хамед", "Фатхи", "Мохамед", "Ибрагим", "Собхи"] }
+  "египет": { capital: "Каир", stadium: "Каирский международный стадион", coach: "Хоссам Хассан", first: ["Мохамед", "Омар", "Махмуд", "Ахмед", "Рами", "Марван", "Имам", "Тарек", "Хамди", "Мостафа", "Яссер", "Халид"], last: ["Салах", "Мармуш", "Трезеге", "Зизо", "Рабиа", "Аттия", "Ашур", "Хамед", "Фатхи", "Мохамед", "Ибрагим", "Собхи"] },
+  "азербайджан": { capital: "Баку", stadium: "Бакинский олимпийский стадион", coach: "Фернанду Сантуш", first: ["Шахруддин", "Бахлул", "Эльвин", "Эмин", "Торал", "Рамиль", "Ренат", "Махир", "Озан", "Джошгун", "Аббас", "Антон"], last: ["Магомедалиев", "Мустафазаде", "Джафаргулиев", "Махмудов", "Байрамов", "Шейдаев", "Дадашов", "Эмрели", "Кёкчю", "Диниев", "Гусейнов", "Кривоцюк"] },
+  "армения": { capital: "Ереван", stadium: "Республиканский стадион", coach: "Егише Меликян", first: ["Огнен", "Эдуард", "Лукас", "Вараздат", "Наир", "Георгий", "Угочукву", "Ваан", "Грант-Леон", "Артак", "Саргис", "Тигран"], last: ["Чанчаревич", "Сперцян", "Селараян", "Ароян", "Тикнизян", "Арутюнян", "Иву", "Бичахчян", "Ранос", "Дашян", "Адамян", "Барсегян"] },
+  "бахрейн": { capital: "Манама", stadium: "Национальный стадион Бахрейна", coach: "Драган Талаич", first: ["Эбрахим", "Валид", "Саид", "Амин", "Мохамед", "Камиль", "Махди", "Али", "Хамад", "Абдулла", "Джасим", "Исмаил"], last: ["Лутфалла", "Аль-Хаям", "Бакер", "Бенадди", "Мархун", "Аль-Асвад", "Аль-Хумайдан", "Мадан", "Аль-Шамсан", "Аль-Халаси", "Аль-Шайх", "Абдуллатиф"] },
+  "бангладеш": { capital: "Дакка", stadium: "Национальный стадион Бангабанду", coach: "Хавьер Кабрера", first: ["Митул", "Топу", "Тарик", "Джамал", "Сохель", "Ракиб", "Фойсал", "Шейх", "Хридой", "Мохаммад", "Саад", "Иса"], last: ["Марма", "Барман", "Кази", "Бхуян", "Рана", "Хоссейн", "Ахмед", "Морсалин", "Рахман", "Ибрахим", "Уддин", "Файсал"] },
+  "бруней": { capital: "Бандар-Сери-Бегаван", stadium: "Стадион Хассанала Болкиаха", coach: "Винисиус Эутропио", first: ["Хайми", "Азизи", "Юра", "Назри", "Ади", "Хендра", "Хаким", "Азван", "Шафик", "Назирул", "Фаик", "Хариз"], last: ["Ньяринг", "Али", "Индра", "Якоб", "Саид", "Азам", "Язид", "Рахман", "Сафиуддин", "Азман", "Болкиах", "Даниал"] },
+  "камбоджа": { capital: "Пномпень", stadium: "Олимпийский стадион Пномпеня", coach: "Кодзи Гётоку", first: ["Вирак", "Соеуй", "Тек", "Чантхеа", "Орн", "Сос", "Ченг", "Сованн", "Лим", "Юдай", "Ник", "Камбуч"], last: ["Дара", "Висал", "Чанполин", "Сиенг", "Чанполин", "Сухана", "Менг", "Оум", "Писот", "Огава", "Тейлор", "Раттанак"] },
+  "индия": { capital: "Нью-Дели", stadium: "Стадион Джавахарлала Неру", coach: "Маноло Маркес", first: ["Гурприт", "Сандеш", "Рахул", "Субхашиш", "Анирудх", "Суреш", "Лаллианзуала", "Манвир", "Сахал", "Брэндон", "Листон", "Викрам"], last: ["Сингх Сандху", "Джинган", "Бхеке", "Босе", "Тхапа", "Вангджам", "Чхангте", "Сингх", "Самад", "Фернандес", "Колако", "Пратап"] },
+  "киргизия": { capital: "Бишкек", stadium: "Стадион имени Долона Омурзакова", coach: "Максим Лисицын", first: ["Эржан", "Валерий", "Тамирлан", "Кайрат", "Гулжигит", "Алимардон", "Одилжон", "Джоэл", "Александр", "Элдияр", "Бекназ", "Эрмек"], last: ["Токотаев", "Кичин", "Козубаев", "Жыргалбек уулу", "Алыкулов", "Шукуров", "Абдурахманов", "Кожо", "Мищенко", "Зарыпбеков", "Алмазбеков", "Кенжебаев"] },
+  "кыргызстан": { capital: "Бишкек", stadium: "Стадион имени Долона Омурзакова", coach: "Максим Лисицын", first: ["Эржан", "Валерий", "Тамирлан", "Кайрат", "Гулжигит", "Алимардон", "Одилжон", "Джоэл", "Александр", "Элдияр", "Бекназ", "Эрмек"], last: ["Токотаев", "Кичин", "Козубаев", "Жыргалбек уулу", "Алыкулов", "Шукуров", "Абдурахманов", "Кожо", "Мищенко", "Зарыпбеков", "Алмазбеков", "Кенжебаев"] },
+  "япония": { capital: "Токио", stadium: "Японский национальный стадион", coach: "Хадзимэ Мориясу", first: ["Дзион", "Ко", "Такехиро", "Ватару", "Такефуса", "Каору", "Рицу", "Такуми", "Аясэ", "Кейто", "Ао", "Юки"], last: ["Судзуки", "Итакура", "Томиясу", "Эндо", "Кубо", "Митома", "Доан", "Минамино", "Уэда", "Накамура", "Танака", "Сома"] },
+  "китай": { capital: "Пекин", stadium: "Стадион «Уокерс»", coach: "Бранко Иванкович", first: ["Ван", "Чжу", "Цзян", "Лю", "Ли", "Сюй", "Се", "Вэй", "Чжан", "У", "Линь", "Юань"], last: ["Далэй", "Чэньцзе", "Гуантай", "Ян", "Юаньи", "Хаоян", "Пэнфэй", "Шихао", "Юйнин", "Лэй", "Лянмин", "Ван"] },
+  "кндр": { capital: "Пхеньян", stadium: "Стадион имени Ким Ир Сена", coach: "Син Ён Нам", first: ["Кан", "Чан", "Ким", "Чхве", "Пак", "Ри", "Хан", "Чон", "Мун", "Пэк", "Юн", "О"], last: ["Чу Хёк", "Кук Чхоль", "Ю Сон", "Ок Чхоль", "Кван Рён", "Иль Гван", "Кван Сон", "Иль Гван", "Ин Чжу", "Чхун Сон", "Кён Хун", "Хён Чхоль"] },
+  "северная корея": { capital: "Пхеньян", stadium: "Стадион имени Ким Ир Сена", coach: "Син Ён Нам", first: ["Кан", "Чан", "Ким", "Чхве", "Пак", "Ри", "Хан", "Чон", "Мун", "Пэк", "Юн", "О"], last: ["Чу Хёк", "Кук Чхоль", "Ю Сон", "Ок Чхоль", "Кван Рён", "Иль Гван", "Кван Сон", "Иль Гван", "Ин Чжу", "Чхун Сон", "Кён Хун", "Хён Чхоль"] }
 };
 var FOREIGN_NT_FALLBACK_FIRST = ["Марко", "Лукас", "Давид", "Даниэль", "Томас", "Алекс", "Самуэль", "Николас", "Андреас", "Эмиль", "Иван", "Карлос"];
 var FOREIGN_NT_FALLBACK_LAST = ["Силва", "Ковач", "Петрович", "Мендеш", "Мюллер", "Новак", "Морено", "Траоре", "Хасан", "Ким", "Диаш", "Хан"];
@@ -9404,8 +9500,10 @@ function ensureForeignNationalTeam(rawOppName: string, defaultU21: boolean) {
   const compId = isU21 ? "national_u21" : "national";
   if (!t) {
     const existingByName = db.teams.find((x) => String(x.name || "").trim().toLowerCase() === displayName.toLowerCase() && (x.national || x.nationalForeign));
+    const resolvedNtLogo = getTeamLogo(displayName) || getTeamLogo(country) || "/logos/leagues/cup.svg";
     if (existingByName) {
       t = existingByName;
+      if (resolvedNtLogo.startsWith("/assets/") && (!t.logo || t.logo === "/logos/leagues/cup.svg")) t.logo = resolvedNtLogo;
     } else {
       t = {
         id: tid,
@@ -9414,12 +9512,15 @@ function ensureForeignNationalTeam(rawOppName: string, defaultU21: boolean) {
         city: bank?.capital || country || "",
         country: country || displayName,
         stadium: bank?.stadium || `Национальный стадион (${country || displayName})`,
-        logo: getTeamLogo(displayName) || getTeamLogo(country) || "/logos/leagues/cup.svg",
+        logo: resolvedNtLogo,
         national: "foreign",
         nationalForeign: true
       };
       db.teams.push(t);
     }
+  } else {
+    const resolvedNtLogo = getTeamLogo(displayName) || getTeamLogo(country) || "";
+    if (resolvedNtLogo.startsWith("/assets/") && (!t.logo || t.logo === "/logos/leagues/cup.svg")) t.logo = resolvedNtLogo;
   }
   db.coaches ||= {};
   if (!Array.isArray(db.coaches) && !db.coaches[t.id]) {
@@ -20444,7 +20545,7 @@ var pubPlayer = (p, refComp: any = null) => {
     abroadCountry: p.abroadCountry || null,
     isAbroad: Boolean((tmObj && tmObj.comp === "europe") || p.abroadClub),
     isFreeAgent: Boolean(!p.teamId && !p.abroadClub),
-    teamLogo: p.teamId ? teamLogo(p.teamId) : null,
+    teamLogo: p.teamId ? teamLogo(p.teamId) : (p.abroadClub ? getTeamLogo(p.abroadClub) || null : null),
     formerClub: p.formerClub || null,
     releasedAt: p.releasedAt || null,
     style: p.style,
@@ -31588,7 +31689,7 @@ function enrichNationalBreak(brk, teamType: "main" | "u21" = "main") {
       nation: p.nation || "Россия",
       teamId: p.teamId || null,
       teamName: st.clubLabel,
-      teamLogo: p.teamId ? teamLogo(p.teamId) : "",
+      teamLogo: p.teamId ? teamLogo(p.teamId) : (p.abroadClub ? getTeamLogo(p.abroadClub) : ""),
       leagueComp: st.leagueComp,
       leagueName: st.leagueName,
       isAbroad: st.isAbroad,
@@ -31605,6 +31706,9 @@ function enrichNationalBreak(brk, teamType: "main" | "u21" = "main") {
       rating: st.avgRating
     };
   }).filter(Boolean).sort(compareNationalPlayersPosClubAge);
+  const ntSelfLogo = tt === "u21"
+    ? "/assets/aistudio/russia_russian-football-union.football-logos.cc_7af10f2f.svg"
+    : "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg";
   const matches = (brk.matches || []).map((m) => {
     const fxObj = fx(m.fixtureId || `ntfix_${tt}_${m.id}`);
     return {
@@ -31620,8 +31724,8 @@ function enrichNationalBreak(brk, teamType: "main" | "u21" = "main") {
       gameTime: fxObj?.gameTime || m.gameTime || m.time || "19:00",
       realDate: fxObj?.realDate || m.realDate || m.date,
       realTime: fxObj?.realTime || m.realTime || m.time || "19:00",
-      russiaLogo: "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg",
-      opponentLogo: teamLogo(fxObj ? (m.home !== false ? fxObj.away : fxObj.home) : m.opponent)
+      russiaLogo: ntSelfLogo,
+      opponentLogo: (fxObj ? teamLogo(m.home !== false ? fxObj.away : fxObj.home) : "") || getTeamLogo(m.opponent)
     };
   });
   const { playerProposals, opponentProposals } = getNationalProposals(brk);
@@ -31638,7 +31742,7 @@ function enrichNationalBreak(brk, teamType: "main" | "u21" = "main") {
       age: p ? ageOfPlayer(p) : null,
       teamId: p?.teamId || pr.proposedByTeamId,
       teamName: st ? st.clubLabel : pr.proposedByName,
-      teamLogo: p?.teamId ? teamLogo(p.teamId) : "",
+      teamLogo: p?.teamId ? teamLogo(p.teamId) : (p?.abroadClub ? getTeamLogo(p.abroadClub) : ""),
       leagueName: st?.leagueName || "",
       isAbroad: st ? st.isAbroad : false,
       matches: st ? st.matches : 0,
@@ -31655,7 +31759,7 @@ function enrichNationalBreak(brk, teamType: "main" | "u21" = "main") {
   return {
     ...brk,
     teamType: tt,
-    teamLogo: "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg",
+    teamLogo: ntSelfLogo,
     matches,
     extendedPlayers: enrichIds(brk.extended),
     finalPlayers: enrichIds(brk.final),
