@@ -9948,7 +9948,7 @@ function loanPoolFor(tid, f) {
   const out = [];
   for (const sid of sisterIdsOf(tid)) {
     for (const p of squadOf(sid)) {
-      out.push({ p, from: sid, available: isAvail(p, f.date, f.comp), busyWith: loanBusyWith(p.id, f.date, tid) });
+      out.push({ p, from: sid, available: isAvail(p, f.date, f.comp, tid), busyWith: loanBusyWith(p.id, f.date, tid) });
     }
   }
   return out;
@@ -10102,7 +10102,11 @@ function isAvail(p, date, comp: any = null, forTid: any = null) {
   if (p.banUntil && (!date || p.banUntil >= date)) return false;
   if (p.out && (!date || p.out.until >= date)) return false;
   // вызван в сборную: недоступен клубу (кроме матчей самой сборной, где forTid — её tid)
-  if (date && !ntTypeOfTid(forTid) && ntCalledUpTypeOn(p.id, date)) return false;
+  const forNt = ntTypeOfTid(forTid);
+  if (date && ntCalledUpTypeOn(p.id, date)) {
+    if (!forNt) return false;
+    if (!ntActiveIds(forNt).includes(p.id) && ntCalledUpTypeOn(p.id, date) !== forNt) return false;
+  }
   return true;
 }
 var ruPlural = (n, a, b, c) => {
@@ -10227,10 +10231,13 @@ function outText(p, date = null) {
   const lbl = p.out.label || (p.out.days ? daysLabel(p.out.days) : "");
   return `${lbl ? lbl + " " : ""}(\u0434\u043E ${ruDateStr(p.out.until)})`.trim();
 }
-function unavailText(p, date = null, comp: any = null) {
+function unavailText(p, date = null, comp: any = null, forTid: any = null) {
   const out = [];
+  const forNt = ntTypeOfTid(forTid);
   const ntT = date ? ntCalledUpTypeOn(p?.id, date) : null;
-  if (ntT) out.push(ntT === "u21" ? "вызван в молодёжную сборную России U21" : "вызван в сборную России");
+  if (ntT && (!forNt || (!ntActiveIds(forNt).includes(p?.id) && ntT !== forNt))) {
+    out.push(ntT === "u21" ? "вызван в молодёжную сборную России U21" : "вызван в сборную России");
+  }
   const b = banText(p, date, comp);
   if (b) out.push(`\u0434\u0438\u0441\u043A\u0432\u0430\u043B\u0438\u0444\u0438\u043A\u0430\u0446\u0438\u044F: ${b}`);
   const o = outText(p, date);
@@ -13734,7 +13741,7 @@ async function buildCtx(f) {
     home: buildMatchBonusImpact(getBonusesCtx(), f, f.home, ctx.lineup.home),
     away: buildMatchBonusImpact(getBonusesCtx(), f, f.away, ctx.lineup.away)
   };
-  const miss = (s) => squadOf(f[s]).filter((p) => !isAvail(p, f.date, f.comp, f[s])).map((p) => `${p.name} (${unavailText(p, f.date, f.comp) || "\u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D"})`);
+  const miss = (s) => squadOf(f[s]).filter((p) => !isAvail(p, f.date, f.comp, f[s])).map((p) => `${p.name} (${unavailText(p, f.date, f.comp, f[s]) || "\u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D"})`);
   ctx.missing = { home: miss("home"), away: miss("away") };
   const cH = getCoachForTeam(f.home), cA = getCoachForTeam(f.away);
   const sH = getStaffForTeam(f.home), sA = getStaffForTeam(f.away);
@@ -16382,7 +16389,7 @@ function techProblems(f, tid, side?: "home" | "away") {
       ...loanPoolFor(tid, f).map((x) => x.p.id)
     ]).size;
     if (uniqCount < 22) out.push("недостаточно игроков в клубе для спарринга (нужно минимум 22)");
-  } else if (!db.squads[tid] || squadOf(tid).length < 11) {
+  } else if ((!ntTypeOfTid(tid) && !db.squads[tid]) || squadOf(tid).length < 11) {
     out.push("\u043D\u0435 \u043F\u043E\u0434\u0430\u043D\u0430 \u0437\u0430\u044F\u0432\u043A\u0430");
   }
   const miss = REQUIRED_STAFF_ROLES.filter((r) => !hasStaffRole(tid, r));
@@ -23882,8 +23889,8 @@ app.get("/api/club", needClub, (req, res) => {
   const mapClubPlayer = (p, fComp = null, fDate = today) => ({
     ...pubPlayer(p, fComp),
     inRegistration: regSet.has(p.id),
-    available: isAvail(p, fDate, fComp),
-    unavailText: unavailText(p, fDate, fComp),
+    available: isAvail(p, fDate, fComp, req.tid),
+    unavailText: unavailText(p, fDate, fComp, req.tid),
     anyBanText: banText(p, fDate),
     mood: clubMoraleMap[p.id] || null,
     ...(isAdmin && squadFatCalc ? { fatigue: squadFatCalc.forPlayer(p.id) } : {}),
@@ -23900,8 +23907,8 @@ app.get("/api/club", needClub, (req, res) => {
     for (const p of clubPool) {
       if (isAdmin && fFatCalc && fatigueByPid) fatigueByPid[p.id] = fFatCalc.forPlayer(p.id);
       availByPid[p.id] = {
-        available: isAvail(p, f.date, f.comp),
-        unavailText: unavailText(p, f.date, f.comp),
+        available: isAvail(p, f.date, f.comp, req.tid),
+        unavailText: unavailText(p, f.date, f.comp, req.tid),
         ycCycle: fCompNorm ? (p.ycByComp?.[fCompNorm] || 0) % 4 : 0
       };
     }
@@ -23919,7 +23926,7 @@ app.get("/api/club", needClub, (req, res) => {
         from: x.from,
         fromName: tn(x.from),
         available: x.available,
-        unavailText: x.available ? "" : unavailText(x.p, f.date, f.comp),
+        unavailText: x.available ? "" : unavailText(x.p, f.date, f.comp, req.tid),
         busyWith: x.busyWith,
         ...(isAdmin ? { fatigue: lFat } : {})
       };
@@ -23977,9 +23984,9 @@ app.get("/api/club", needClub, (req, res) => {
   const intraPoolAll = [...intraPoolAllMap.values()];
   const intraPoolInfo = {
     total: intraPoolAll.length,
-    available: intraPoolAll.filter((p) => isAvail(p, refDate, FRIENDLY_COMP)).length,
+    available: intraPoolAll.filter((p) => isAvail(p, refDate, FRIENDLY_COMP, req.tid)).length,
     gkTotal: intraPoolAll.filter((p) => playerPositions(p).includes("ВР")).length,
-    gkAvailable: intraPoolAll.filter((p) => playerPositions(p).includes("ВР") && isAvail(p, refDate, FRIENDLY_COMP)).length
+    gkAvailable: intraPoolAll.filter((p) => playerPositions(p).includes("ВР") && isAvail(p, refDate, FRIENDLY_COMP, req.tid)).length
   };
   res.json({
     team: { ...pubTeam(t), code: isAdmin ? t.code : void 0 },
@@ -24025,8 +24032,8 @@ app.get("/api/club", needClub, (req, res) => {
           roster: [...fRo].sort((a, b) => (posOrd[a.pos] ?? 9) - (posOrd[b.pos] ?? 9) || String(a.name || "").localeCompare(String(b.name || ""), "ru")).map((p) => ({
             ...pubPlayer(p, ft.comp || refComp),
             inRegistration: fSqSet.has(p.id),
-            available: isAvail(p, refDate, ft.comp || refComp),
-            unavailText: unavailText(p, refDate, ft.comp || refComp),
+            available: isAvail(p, refDate, ft.comp || refComp, ft.id),
+            unavailText: unavailText(p, refDate, ft.comp || refComp, ft.id),
             anyBanText: banText(p, refDate)
           }))
         };
@@ -25907,20 +25914,20 @@ app.post("/api/club/lineup", needClub, (req, res) => {
     const sq = new Set<string>([...clubPool.map((p) => p.id), ...lPool.map((x) => x.p.id)]);
     const availGkCount = [...sq].filter((id) => {
       const p = player(id);
-      return p && isAvail(p, f.date, f.comp) && !loanBusyWith(id, f.date, req.tid) && playerPositions(p).includes("ВР");
+      return p && isAvail(p, f.date, f.comp, req.tid) && !loanBusyWith(id, f.date, req.tid) && playerPositions(p).includes("ВР");
     }).length;
     const validateIntraSide = (payload: any, sideLbl: string, needGk: boolean) => {
       const st = (Array.isArray(payload?.starters) ? payload.starters : []).filter((id) => sq.has(id));
       if (new Set(st).size !== st.length) return { err: `Игрок указан дважды в команде «${sideLbl}»` };
       if (st.length !== 11) return { err: `В старте команды «${sideLbl}» должно быть ровно 11 игроков` };
       if (needGk && !st.some((id) => playerPositions(player(id)).includes("ВР"))) return { err: `В старте команды «${sideLbl}» нужен вратарь` };
-      const bad = st.map(player).filter((p) => !isAvail(p, f.date, f.comp));
+      const bad = st.map(player).filter((p) => !isAvail(p, f.date, f.comp, req.tid));
       if (bad.length) return { err: `Недоступны (${sideLbl}): ${bad.map((p) => p.name).join(", ")}` };
       const benchIds0 = (Array.isArray(payload?.bench) ? payload.bench : []).filter((id) => sq.has(id) && !st.includes(id)).slice(0, subRules.maxBench);
       for (const id of [...st, ...benchIds0]) {
         const w = loanBusyWith(id, f.date, req.tid);
         if (w) return { err: `${player(id)?.name}: уже заявлен на матч команды «${w}» в этот же день` };
-        if (!isAvail(player(id), f.date, f.comp)) return { err: `${player(id)?.name} недоступен (${unavailText(player(id), f.date, f.comp) || "травма / дисквалификация"})` };
+        if (!isAvail(player(id), f.date, f.comp, req.tid)) return { err: `${player(id)?.name} недоступен (${unavailText(player(id), f.date, f.comp, req.tid) || "травма / дисквалификация"})` };
       }
       const fm = /^\d(-\d){1,3}$/.test(payload?.formation || "") ? payload.formation : "4-3-3";
       const slotRes = assignFormationSlots(fm, st, payload?.slots);
@@ -25998,13 +26005,13 @@ app.post("/api/club/lineup", needClub, (req, res) => {
   if (new Set(st).size !== st.length) return fail(res, "\u0418\u0433\u0440\u043E\u043A \u0443\u043A\u0430\u0437\u0430\u043D \u0434\u0432\u0430\u0436\u0434\u044B");
   if (st.length !== 11) return fail(res, "\u0412 \u0441\u0442\u0430\u0440\u0442\u0435 \u0434\u043E\u043B\u0436\u043D\u043E \u0431\u044B\u0442\u044C \u0440\u043E\u0432\u043D\u043E 11 \u0438\u0433\u0440\u043E\u043A\u043E\u0432");
   if (!st.some((id) => playerPositions(player(id)).includes("\u0412\u0420"))) return fail(res, "\u0412 \u0441\u0442\u0430\u0440\u0442\u0435 \u043D\u0443\u0436\u0435\u043D \u0432\u0440\u0430\u0442\u0430\u0440\u044C");
-  const bad = st.map(player).filter((p) => !isAvail(p, f.date, f.comp));
+  const bad = st.map(player).filter((p) => !isAvail(p, f.date, f.comp, req.tid));
   if (bad.length) return fail(res, `\u041D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B: ${bad.map((p) => p.name).join(", ")}`);
   const benchIds0 = (req.body.bench || []).filter((id) => sq.has(id) && !st.includes(id)).slice(0, subRules.maxBench);
   for (const id of [...st, ...benchIds0]) {
     const w = loanBusyWith(id, f.date, req.tid);
     if (w) return fail(res, `${player(id)?.name}: \u0443\u0436\u0435 \u0437\u0430\u044F\u0432\u043B\u0435\u043D \u043D\u0430 \u043C\u0430\u0442\u0447 \u043A\u043E\u043C\u0430\u043D\u0434\u044B \xAB${w}\xBB \u0432 \u044D\u0442\u043E\u0442 \u0436\u0435 \u0434\u0435\u043D\u044C`);
-    if (!isAvail(player(id), f.date, f.comp)) return fail(res, `${player(id)?.name} недоступен (${unavailText(player(id), f.date, f.comp) || "травма / дисквалификация"})`);
+    if (!isAvail(player(id), f.date, f.comp, req.tid)) return fail(res, `${player(id)?.name} недоступен (${unavailText(player(id), f.date, f.comp, req.tid) || "травма / дисквалификация"})`);
   }
   const matchLegLimit = getFixtureLegionLimit(f, req.tid);
   if (matchLegLimit) {
