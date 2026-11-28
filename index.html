@@ -486,7 +486,6 @@ img,svg,video{max-width:100%}
   .wrap table th:first-child,.wrap table td:first-child{width:160px !important;min-width:160px !important;max-width:160px !important;padding-left:8px !important;white-space:normal !important}
   .wrap table.idx-table th:first-child,.wrap table.idx-table td:first-child,
   .wrap table.nt-table th:first-child,.wrap table.nt-table td:first-child{position:static !important;box-shadow:none !important;width:36px !important;min-width:36px !important;max-width:36px !important;padding:7px 4px !important;text-align:center !important}
-  .wrap table.nt-table td.nt-reason,.wrap table.nt-table th.nt-reason{white-space:normal !important;min-width:190px !important;max-width:250px !important;line-height:1.35 !important}
   .wrap table td:first-child .t-cell{display:flex;align-items:center;gap:6px;max-width:100%;min-width:0}
   .wrap table td:first-child .t-cell .pos{width:16px;flex:0 0 16px;font-size:12px}
   .wrap table td:first-child .t-cell .t-logo{width:18px;height:18px;flex:0 0 18px}
@@ -20813,13 +20812,13 @@ async function pgNational(app, subTeam) {
   const thSort = (k, label, alignLeft = false) =>
     `<th class="${alignLeft ? 'l' : ''}" data-nt-sort="${k}" style="cursor:pointer;user-select:none;white-space:nowrap" title="Сортировать">${label}${sortArrow(k)}</th>`;
 
-  const renderPlayersTable = (list, canEdit, showReasons = false, interactiveSort = true) => {
+  const renderPlayersTable = (list, canEdit, interactiveSort = true) => {
     if (!list.length) {
       return `<div class="empty">${activeStage === 'final' ? 'Итоговый список (кого вызвали) ещё не сформирован.' : 'Расширенный состав на ближайшую паузу ещё не опубликован.'}</div>`;
     }
     const sortedList = sortNationalList(list, NT_SORT, NT_SORT_DIR);
     return `<div class="scroll-hint"><span>👉 Прокручивайте состав вправо</span></div><div class="wrap"><table class="nt-table">
-      <thead><tr><th>№</th><th class="l">Игрок</th>${interactiveSort ? thSort('pos', 'Поз.') : '<th>Поз.</th>'}${interactiveSort ? thSort('age', 'Возр.') : '<th>Возр.</th>'}${interactiveSort ? thSort('club', 'Клуб', true) : '<th class="l">Клуб</th>'}${showReasons ? '<th class="l nt-reason">Почему вызван</th>' : ''}${interactiveSort ? thSort('matches', 'Матчи') : '<th>Матчи</th>'}${interactiveSort ? thSort('goals', 'Голы') : '<th>Голы</th>'}${interactiveSort ? thSort('assists', 'Пасы') : '<th>Пасы</th>'}${interactiveSort ? thSort('rating', 'Оценка') : '<th>Оценка</th>'}${canEdit ? '<th></th>' : ''}</tr></thead>
+      <thead><tr><th>№</th><th class="l">Игрок</th>${interactiveSort ? thSort('pos', 'Поз.') : '<th>Поз.</th>'}${interactiveSort ? thSort('age', 'Возр.') : '<th>Возр.</th>'}${interactiveSort ? thSort('club', 'Клуб', true) : '<th class="l">Клуб</th>'}${interactiveSort ? thSort('matches', 'Матчи') : '<th>Матчи</th>'}${interactiveSort ? thSort('goals', 'Голы') : '<th>Голы</th>'}${interactiveSort ? thSort('assists', 'Пасы') : '<th>Пасы</th>'}${interactiveSort ? thSort('rating', 'Оценка') : '<th>Оценка</th>'}${canEdit ? '<th></th>' : ''}</tr></thead>
       <tbody>
         ${sortedList.map((p, i) => `<tr>
           <td><b>${i + 1}</b></td>
@@ -20827,7 +20826,6 @@ async function pgNational(app, subTeam) {
           <td><span class="tag">${e(p.pos)}</span></td>
           <td class="small muted">${p.age != null ? `${p.age} л.` : '—'}</td>
           <td class="l"><div class="t-cell">${p.teamLogo ? `<img class="t-logo" src="${p.teamLogo}" alt=""/>` : ''}<span>${e(p.teamName)}${p.isAbroad && p.abroadCountry && !String(p.teamName || '').includes(p.abroadCountry) ? ` <span class="muted small">(${e(p.abroadCountry)})</span>` : ''}</span></div></td>
-          ${showReasons ? `<td class="l small nt-reason" style="max-width:280px;color:#334155;line-height:1.35">${e(p.callupReason || '—')}</td>` : ''}
           <td>${p.matches || 0}</td>
           <td>${p.goals || 0}</td>
           <td>${p.assists || 0}</td>
@@ -20916,7 +20914,7 @@ async function pgNational(app, subTeam) {
           <button class="btn ${NT_SORT === 'goals' ? '' : 'alt'} sm" data-nt-sort-btn="goals">По голам${NT_SORT === 'goals' ? sortArrow('goals') : ''}</button>
           <button class="btn ${NT_SORT === 'rating' ? '' : 'alt'} sm" data-nt-sort-btn="rating">По оценке${NT_SORT === 'rating' ? sortArrow('rating') : ''}</button>
         </div>` : ''}
-        <div id="nt_squad_table_wrap">${renderPlayersTable(activeList, isAdmin, activeStage === 'final', true)}</div>
+        <div id="nt_squad_table_wrap">${renderPlayersTable(activeList, isAdmin, true)}</div>
       </div>
 
       <div class="panel">
@@ -20978,7 +20976,7 @@ async function pgNational(app, subTeam) {
           <span class="small muted">Архив · ${e(a.archivedAt || '')} · Игроков: ${list.length}</span>
         </div>
         ${renderMatches(a.matches)}
-        <div style="margin-top:10px">${renderPlayersTable(list, false, hasFinal, false)}</div>
+        <div style="margin-top:10px">${renderPlayersTable(list, false, false)}</div>
       </div>`;
     }).join('') : '<div class="panel"><div class="empty">Архив сборов пуст.</div></div>';
   }
@@ -21027,7 +21025,7 @@ async function pgNational(app, subTeam) {
       NT_SORT_DIR = (key === 'matches' || key === 'goals' || key === 'assists' || key === 'rating') ? 'desc' : 'asc';
     }
     const wrap = $('#nt_squad_table_wrap');
-    if (wrap) wrap.innerHTML = renderPlayersTable(activeList, isAdmin, activeStage === 'final', true);
+    if (wrap) wrap.innerHTML = renderPlayersTable(activeList, isAdmin, true);
     const sortLabels = { pos: 'По позиции', club: 'По клубу', age: 'По возрасту', goals: 'По голам', rating: 'По оценке' };
     app.querySelectorAll('[data-nt-sort-btn]').forEach(btn => {
       const k = btn.dataset.ntSortBtn;

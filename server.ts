@@ -31531,44 +31531,6 @@ function nationalPlayerClubLabel(p: any): string {
   if (p.teamId) return tn(p.teamId);
   return "Свободный агент";
 }
-function buildNationalCallupReasonFallback(p: any, teamType: "main" | "u21" = "main", votes = 0, preStats?: any): string {
-  if (!p) return "Выбор тренерского штаба по текущей форме.";
-  const st = preStats || getPlayerNationalStats(p);
-  const isAbroad = st.isAbroad;
-  const clubLbl = st.clubLabel || nationalPlayerClubLabel(p);
-  const goals = Number(st.goals || 0);
-  const assists = Number(st.assists || 0);
-  const matches = Number(st.matches || 0);
-  const avgRating = Number(st.avgRating || 0);
-  const saves = Number(st.saves || 0);
-  const pos = String(p.pos || "ЦП");
-  const ratStr = avgRating > 0 ? `, ср. оц. ${avgRating.toFixed(2)}` : "";
-  const bgShort = st.stats2y ? ` (${String(st.stats2y).slice(0, 48)})` : "";
-  if (isAbroad) {
-    return `Легионер в «${clubLbl}»: высокая ценность за зарубежный опыт.`;
-  }
-  if (pos === "ВР") {
-    return matches > 0
-      ? `Надёжная игра в воротах «${clubLbl}» (${matches} м., ${saves} сейвов${ratStr}).`
-      : `Стабильная вратарская практика в «${clubLbl}»${bgShort}.`;
-  }
-  if (goals + assists >= 2 && matches > 0) {
-    return `Яркая результативность в «${clubLbl}» (${goals} Г + ${assists} П за ${matches} м.${ratStr}).`;
-  }
-  if (votes >= 2) {
-    return `Сильный отрезок в «${clubLbl}» и поддержка болельщиков (${votes} гол.${ratStr}).`;
-  }
-  if (teamType === "u21") {
-    const a = ageOfPlayer(p);
-    return matches > 0
-      ? `Лидер молодёжной группы${a ? ` (${a} л.)` : ""} в «${clubLbl}» (${matches} м.${ratStr}).`
-      : `Перспективный игрок для молодёжки U21 из «${clubLbl}»${bgShort}.`;
-  }
-  if (matches > 0) {
-    return `Стабильная игровая практика в «${clubLbl}» (${matches} м.${ratStr}).`;
-  }
-  return `Вызов под задачи штаба из состава «${clubLbl}»${bgShort}.`;
-}
 function isRussianNationalEligible(p: any, teamType: "main" | "u21" = "main") {
   if (!p || p.foreignNational) return false;
   const rawNat = String(p.nation || p.nationality || p.nat || p.country || "Россия").trim().toLowerCase();
@@ -31614,12 +31576,11 @@ function ensureNationalTeam(teamType: "main" | "u21" = "main") {
 }
 function enrichNationalBreak(brk, teamType: "main" | "u21" = "main") {
   const tt = normalizeNationalTeamType(teamType);
-  const reasonsMap = (brk?.finalReasons && typeof brk.finalReasons === "object") ? brk.finalReasons : {};
-  const enrichIds = (ids, includeReasons = false) => (ids || []).map((id) => {
+  const enrichIds = (ids) => (ids || []).map((id) => {
     const p = player(id);
     if (!p) return null;
     const st = getPlayerNationalStats(p);
-    const outObj: any = {
+    return {
       id: p.id,
       name: p.name,
       pos: p.pos,
@@ -31643,11 +31604,6 @@ function enrichNationalBreak(brk, teamType: "main" | "u21" = "main") {
       avgRating: st.avgRating,
       rating: st.avgRating
     };
-    // Краткий комментарий почему вызвали показываем ТОЛЬКО в итоговом (основном) составе, в расширенном — нет
-    if (includeReasons) {
-      outObj.callupReason = reasonsMap[p.id] || buildNationalCallupReasonFallback(p, tt, 0, st);
-    }
-    return outObj;
   }).filter(Boolean).sort(compareNationalPlayersPosClubAge);
   const matches = (brk.matches || []).map((m) => {
     const fxObj = fx(m.fixtureId || `ntfix_${tt}_${m.id}`);
@@ -31701,8 +31657,8 @@ function enrichNationalBreak(brk, teamType: "main" | "u21" = "main") {
     teamType: tt,
     teamLogo: "/assets/aistudio/russia_russia-national-team.football-logos.cc_2a5e3ddc.svg",
     matches,
-    extendedPlayers: enrichIds(brk.extended, false),
-    finalPlayers: enrichIds(brk.final, true),
+    extendedPlayers: enrichIds(brk.extended),
+    finalPlayers: enrichIds(brk.final),
     playerProposals: enrichedPlayerProposals,
     opponentProposals: enrichedOpponentProposals
   };
@@ -31750,7 +31706,6 @@ app.post("/api/admin/national/generate", admin, async (req, res) => {
   }
   const sortedPool = [...pool2].sort((a, b) => (scoreByPid.get(b.id) || 0) - (scoreByPid.get(a.id) || 0));
   let chosenIds: string[] = [];
-  const aiReasons: Record<string, string> = {};
   if (hasLLM() && sortedPool.length > 0) {
     try {
       const candidateSet = new Map<string, any>();
@@ -31809,11 +31764,8 @@ app.post("/api/admin/national/generate", admin, async (req, res) => {
         ? "молодёжной сборной России U21 (до 21 года)"
         : "сборной России";
       const sys = `Ты — главный тренер ${teamLabelSys} по футболу. Выбирай состав строго по позиции (минимум ${stage === "final" ? "3 вратаря, 8 защитников, 8 полузащитников, 4 нападающих" : "4 вратаря, 12 защитников, 14 полузащитников, 7 нападающих"}), опираясь на уровень лиги (РПЛ и зарубежные лиги приоритетнее ФНЛ/2-й лиги и тем более Медиалиги), статистику текущего сезона (матчи, минуты, голы, пасы, сейвы/сухие матчи, СрОц), прошлый бэкграунд и возраст/роль в клубе. Российские легионеры за рубежом имеют высокий приоритет.` + aiInstructionSuffix;
-      const reasonSpec = stage === "final"
-        ? ` Также для каждого из 25 выбранных игроков напиши краткий конкретный комментарий (6-13 слов на русском), почему именно он вызван в основной состав (укажи клуб/лигу, реальную статистику сезона/оценку или прошлый опыт, не выдумывай несуществующие голы). Верни JSON строго в формате: {"ids": ["id1", ...], "reasons": {"id1": "краткий коммент почему вызван", ...}}`
-        : ` Верни JSON: {"ids": ["id1", "id2", ...]}`;
-      const prompt = `Сформируй ${stage === "final" ? "ИТОГОВЫЙ (основной) состав (ровно 25 игроков)" : "РАСШИРЕННЫЙ состав (ровно 40 игроков)"} ${teamLabelPrompt} на ближайшую паузу из списка кандидатов:\n${candidates}\n\n${reasonSpec}`;
-      const raw = await llm(sys, prompt, { json: true, task: teamType === "u21" ? "national_u21_squad" : "national_squad", temp: 0.3, max: stage === "final" ? 3200 : 2000 });
+      const prompt = `Сформируй ${stage === "final" ? "ИТОГОВЫЙ (основной) состав (ровно 25 игроков)" : "РАСШИРЕННЫЙ состав (ровно 40 игроков)"} ${teamLabelPrompt} на ближайшую паузу из списка кандидатов:\n${candidates}\n\nВерни JSON: {"ids": ["id1", "id2", ...]}`;
+      const raw = await llm(sys, prompt, { json: true, task: teamType === "u21" ? "national_u21_squad" : "national_squad", temp: 0.3, max: 2000 });
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed.ids)) {
         const validSet = new Set(sortedPool.map((p) => p.id));
@@ -31825,12 +31777,6 @@ app.post("/api/admin/national/generate", admin, async (req, res) => {
             chosenIds.push(id);
             if (chosenIds.length >= count) break;
           }
-        }
-      }
-      if (stage === "final" && parsed.reasons && typeof parsed.reasons === "object") {
-        for (const [k, v] of Object.entries(parsed.reasons)) {
-          const txt = stripOuterQuotes(String(v || "")).slice(0, 180).trim();
-          if (txt.length >= 6) aiReasons[k] = txt;
         }
       }
     } catch (e) {
@@ -31868,12 +31814,7 @@ app.post("/api/admin/national/generate", admin, async (req, res) => {
   nt.current.stage = stage;
   nt.current[stage] = chosenIds;
   if (stage === "final") {
-    const finalReasons: Record<string, string> = {};
-    for (const pid of chosenIds) {
-      const pObj = player(pid);
-      finalReasons[pid] = aiReasons[pid] || buildNationalCallupReasonFallback(pObj, teamType, votesMap.get(pid) || 0, statsByPid.get(pid));
-    }
-    nt.current.finalReasons = finalReasons;
+    nt.current.finalReasons = {};
   }
   save();
   res.json({ ok: 1, team: teamType, current: enrichNationalBreak(nt.current, teamType) });
@@ -31881,7 +31822,7 @@ app.post("/api/admin/national/generate", admin, async (req, res) => {
 app.post("/api/admin/national/squad", admin, (req, res) => {
   const teamType = normalizeNationalTeamType(req.body.team);
   const nt = ensureNationalTeam(teamType);
-  const { action, pid, stage, reason } = req.body;
+  const { action, pid, stage } = req.body;
   const st = stage || nt.current.stage || "extended";
   nt.current[st] ||= [];
   if (action === "add" && pid) {
@@ -31895,10 +31836,6 @@ app.post("/api/admin/national/squad", admin, (req, res) => {
       return fail(res, `Игрок ${p.name} не имеет права выступать за сборную России.`);
     }
     if (!nt.current[st].includes(pid)) nt.current[st].push(pid);
-    if (st === "final") {
-      nt.current.finalReasons ||= {};
-      nt.current.finalReasons[pid] = String(reason || "").trim() || buildNationalCallupReasonFallback(p, teamType, 0);
-    }
   } else if (action === "remove" && pid) {
     nt.current[st] = nt.current[st].filter((id) => id !== pid);
     if (st === "final" && nt.current.finalReasons) {
