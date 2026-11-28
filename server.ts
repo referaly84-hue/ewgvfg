@@ -21217,7 +21217,7 @@ app.get("/api/match/:id", async (req, res) => {
       weather: hasRich ? f.weather : w.text,
       weatherDetails: hasRich ? f.weatherDetails : w,
       derby: dv ? dv.principled ? `\u041F\u0440\u0438\u043D\u0446\u0438\u043F\u0438\u0430\u043B\u044C\u043D\u044B\u0439 \u043C\u0430\u0442\u0447 (\u041D\u0415 \u0434\u0435\u0440\u0431\u0438): ${dv.name}. ${dv.note}` : `${dv.name}. ${dv.note}` : "\u043D\u0435\u0442",
-      motiv: { home: motivText(f.home, f), away: motivText(f.away, f) },
+      motiv: { home: motivText(f.home, f, HName), away: motivText(f.away, f, AName) },
       subRules: resolveMatchSubRules(f),
       matchFormat: resolveMatchFormat(f),
       friendlyConditions: f.friendlyConditions || f.note || ""
@@ -21225,19 +21225,28 @@ app.get("/api/match/:id", async (req, res) => {
   }
   if (!out.lineups) {
     const H = team(f.home), A = team(f.away);
+    const intra = isIntraSquad(f);
+    const usedHome = new Set<string>();
     out.lineups = {};
-    for (const s of ["home", "away"]) {
+    for (const s of ["home", "away"] as const) {
       const tid = f[s];
       const tm = s === "home" ? H : A;
-      const L = getLineup(f, tid);
+      let L = getLineup(f, tid, s, (intra && s === "away") ? usedHome : undefined);
+      if (intra && s === "away" && (L.starters || []).length < 11) {
+        const hSt = new Set<string>((out.lineups.home?.starters || []).map((x: any) => x.id));
+        L = getLineup(f, tid, s, hSt);
+      }
+      if (intra && s === "home") {
+        for (const pid of [...(L.starters || []), ...(L.bench || [])]) usedHome.add(pid);
+      }
       const canSeeTactics = canManageClubId(req.me, tid);
       const slotRes = assignFormationSlots(L.formation || "4-3-3", L.starters || [], L.slots);
       const orderedIds = slotRes.entries.length === (L.starters || []).length
         ? slotRes.entries.map((e) => e.pid)
         : (L.starters || []);
-      const rolesObj = normalizeRoles(L.roles || db.tactics[tid]?.roles);
+      const rolesObj = normalizeRoles(L.roles || (intra && s === "away" ? undefined : db.tactics[tid]?.roles));
       out.lineups[s] = {
-        name: tm ? tm.name : tn(tid),
+        name: intra ? (s === "home" ? HName : AName) : (tm ? tm.name : tn(tid)),
         logo: teamLogo(tid),
         formation: L.formation || "4-3-3",
         roles: rolesObj,
@@ -21247,6 +21256,14 @@ app.get("/api/match/:id", async (req, res) => {
         tactics: canSeeTactics ? L.tactics || "" : void 0,
         speech: canSeeTactics ? L.speech || "" : void 0,
         training: canSeeTactics ? L.training || "" : void 0,
+        plannedSubs: canSeeTactics || f.status === "done"
+          ? (L.plannedSubs || []).map((ps: any) => ({
+              ...ps,
+              outName: player(ps.outPid)?.name || ps.outPid,
+              inName: player(ps.inPid)?.name || ps.inPid,
+              conditionLabel: SUB_COND_LABELS[ps.condition] || "при любом счёте"
+            }))
+          : void 0,
         starters: orderedIds.map((id) => {
           const p = player(id);
           const fit = slotRes.byPid[id];
@@ -25838,6 +25855,7 @@ app.post("/api/club/lineup", needClub, (req, res) => {
           return fail(res, `Игрок «${player(pid)?.name || pid}» не может одновременно быть в обеих командах («${hLbl}» и «${aLbl}»)`);
         }
       }
+      delete db.lineups[f.id + ":" + req.tid];
       db.lineups[lineupKey(f, req.tid, "home")] = Lh;
       db.lineups[lineupKey(f, req.tid, "away")] = La;
       recordTacticSnapshot(req.tid, f, Lh, "home");

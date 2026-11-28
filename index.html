@@ -12681,6 +12681,299 @@ function renderFatigueBadge(fat, available, unavailReason, opts = {}) {
   </span>`;
 }
 
+const CLIENT_SUB_COND_OPTIONS = [
+  ['always', 'При любом счёте'],
+  ['winning', 'Если ведём в счёте'],
+  ['losing', 'Если проигрываем'],
+  ['drawing', 'При ничьей'],
+  ['not_winning', 'Если не ведём'],
+  ['tired', 'При усталости игрока']
+];
+
+function normalizeClientPlannedSubs(rawSubs, sPids, bPids, maxSubs, maxMatchMin) {
+  if (!Array.isArray(rawSubs) || sPids.length < 11 || !bPids.length || maxSubs === 0) return [];
+  const sSet = new Set(sPids);
+  const bSet = new Set(bPids);
+  const validSubs = [];
+  const usedIn = new Set();
+  const usedOut = new Set();
+  const onPitch = new Set(sSet);
+  const maxMin = Math.max(5, Number(maxMatchMin || 90));
+  const defMin = Math.min(maxMin, Math.max(1, maxMin >= 85 ? 60 : Math.round(maxMin * 0.65)));
+  const sorted = rawSubs
+    .filter(x => x && typeof x === 'object')
+    .map((item, origIdx) => ({
+      ...item,
+      minute: Math.max(1, Math.min(maxMin, Math.round(Number(item.minute) || defMin))),
+      origIdx
+    }))
+    .sort((a, b) => a.minute - b.minute || a.origIdx - b.origIdx);
+  for (const ps of sorted) {
+    if (maxSubs != null && validSubs.length >= maxSubs) break;
+    if (!ps.outPid || !ps.inPid || ps.outPid === ps.inPid) continue;
+    if (!bSet.has(ps.inPid) || usedIn.has(ps.inPid)) continue;
+    if (!onPitch.has(ps.outPid) || usedOut.has(ps.outPid)) continue;
+    usedIn.add(ps.inPid);
+    usedOut.add(ps.outPid);
+    onPitch.delete(ps.outPid);
+    onPitch.add(ps.inPid);
+    validSubs.push({
+      minute: ps.minute,
+      outPid: ps.outPid,
+      inPid: ps.inPid,
+      condition: ps.condition || 'always'
+    });
+  }
+  return validSubs;
+}
+
+function renderGroupedSubsEditor({
+  wrap,
+  titlePrefix,
+  emptyNeedsPlayersMsg,
+  sPids,
+  bPids,
+  poolById,
+  subRules,
+  maxMatchMin,
+  plannedSubs,
+  draftWindow,
+  isLocked,
+  isRpl,
+  limit,
+  simulateSubsLegionClient,
+  onSyncValid,
+  onChange,
+  onAfterRender
+}) {
+  if (!wrap) return;
+  const maxMin = Math.max(5, Number(maxMatchMin || 90));
+  const defMin = Math.min(Math.max(1, maxMin - 2), maxMin >= 85 ? 60 : Math.round(maxMin * 0.65));
+  const subCapTxt = subRules.maxSubs == null ? '∞' : String(subRules.maxSubs);
+  const winCapTxt = subRules.maxWindows == null ? '∞' : String(subRules.maxWindows);
+
+  if (subRules.maxSubs === 0) {
+    if (onSyncValid) onSyncValid([]);
+    wrap.innerHTML = `<div style="font-weight:700;font-size:13px;margin-bottom:4px">${titlePrefix} (без замен)</div><div class="muted small">По условиям этого матча замены отключены.</div>`;
+    if (onAfterRender) onAfterRender([]);
+    return;
+  }
+  if (sPids.length < 11 || bPids.length === 0) {
+    wrap.innerHTML = `<div style="font-weight:700;font-size:13px;margin-bottom:4px">${titlePrefix} (${e(subRules.label)})</div><div class="muted small">${emptyNeedsPlayersMsg}</div>`;
+    if (onAfterRender) onAfterRender([]);
+    return;
+  }
+
+  const validSubs = normalizeClientPlannedSubs(plannedSubs, sPids, bPids, subRules.maxSubs, maxMin);
+  if (onSyncValid) onSyncValid(validSubs);
+
+  const distinctTimes = [];
+  for (const tSec of validSubs.map(x => x.minute * 60).sort((a, b) => a - b)) {
+    if (!distinctTimes.length || tSec - distinctTimes[distinctTimes.length - 1] > 90) distinctTimes.push(tSec);
+  }
+  const tooManyWindows = subRules.maxWindows != null && distinctTimes.length > subRules.maxWindows;
+  const subSim = isRpl && simulateSubsLegionClient ? simulateSubsLegionClient(validSubs, sPids) : null;
+  const hasLegSubChange = !!(isRpl && subSim && validSubs.some((_, k) => (subSim.rowStates[k]?.delta || 0) !== 0));
+
+  const availBenchForNew = bPids.filter(pid => !validSubs.some(x => x.inPid === pid));
+  const maxBySubs = subRules.maxSubs != null ? Math.max(0, subRules.maxSubs - validSubs.length) : availBenchForNew.length;
+  const maxCanAdd = Math.max(0, Math.min(availBenchForNew.length, maxBySubs));
+
+  if (!draftWindow.minute || draftWindow.minute < 1 || draftWindow.minute > maxMin) {
+    draftWindow.minute = defMin;
+  }
+  draftWindow.count = Math.max(1, Math.min(Math.max(1, maxCanAdd), Math.round(Number(draftWindow.count) || 1)));
+  if (!draftWindow.condition) draftWindow.condition = 'always';
+
+  const groups = [];
+  const byMin = new Map();
+  validSubs.forEach((ps, idx) => {
+    let g = byMin.get(ps.minute);
+    if (!g) {
+      g = { minute: ps.minute, items: [] };
+      byMin.set(ps.minute, g);
+      groups.push(g);
+    }
+    g.items.push({ ps, idx });
+  });
+
+  const renderPlayerOpt = pid => {
+    const p = poolById[pid];
+    const legHint = isRpl && p?.isLegionnaire ? ' [Лег]' : '';
+    return `${e(clientPosLabel(p || '?'))} · ${e(p?.name || pid)}${legHint}`;
+  };
+
+  const groupsHtml = groups.map((grp, wIdx) => {
+    const rowsHtml = grp.items.map(({ ps, idx }) => {
+      const outCandidates = [...sPids, ...validSubs.slice(0, idx).filter(x => x.minute < ps.minute).map(x => x.inPid)]
+        .filter((pid, k, arr) => arr.indexOf(pid) === k && (pid === ps.outPid || !validSubs.some((o, oi) => oi !== idx && o.outPid === pid)));
+      const inCandidates = bPids.filter(pid => pid === ps.inPid || !validSubs.some((o, oi) => oi !== idx && o.inPid === pid));
+      const outOpts = outCandidates.map(pid => `<option value="${e(pid)}" ${pid === ps.outPid ? 'selected' : ''}>${renderPlayerOpt(pid)}</option>`).join('');
+      const inOpts = inCandidates.map(pid => `<option value="${e(pid)}" ${pid === ps.inPid ? 'selected' : ''}>${renderPlayerOpt(pid)}</option>`).join('');
+      const condOpts = CLIENT_SUB_COND_OPTIONS.map(([val, lbl]) => `<option value="${val}" ${ps.condition === val ? 'selected' : ''}>${lbl}</option>`).join('');
+      const stInfo = subSim?.rowStates?.[idx];
+      const rowIsOver = !!(isRpl && stInfo?.isOver);
+      const legBadge = isRpl && stInfo
+        ? `<span class="tag" style="font-size:11px;white-space:nowrap;${rowIsOver ? 'background:#fee2e2;color:#991b1b;border-color:#fca5a5;font-weight:700' : 'background:rgba(22,163,74,.1);color:#15803d;border-color:rgba(22,163,74,.28)'}">${rowIsOver ? '⛔' : '⚡'} ${stInfo.projected}/${limit.onPitch} лег.</span>`
+        : '';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:${rowIsOver ? '7px 8px' : '5px 0'};border-bottom:1px dashed var(--line);flex-wrap:wrap;${rowIsOver ? 'background:rgba(220,38,38,.06);border:1px solid rgba(220,38,38,.3);border-radius:7px;margin:4px 0' : ''}">
+        <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:165px">
+          <span class="small muted" style="white-space:nowrap">Уходит:</span>
+          <select class="gs-out-pick" data-sub-idx="${idx}" style="flex:1;min-width:115px">${outOpts}</select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:165px">
+          <span class="small muted" style="white-space:nowrap">Выходит:</span>
+          <select class="gs-in-pick" data-sub-idx="${idx}" style="flex:1;min-width:115px">${inOpts}</select>
+        </div>
+        <select class="gs-cond-pick" data-sub-idx="${idx}" style="min-width:135px">${condOpts}</select>
+        ${legBadge}
+        <button type="button" class="btn sm alt gs-del-btn" data-sub-idx="${idx}" title="Удалить замену" style="padding:3px 8px">✕</button>
+      </div>`;
+    }).join('');
+
+    return `<div style="margin-top:8px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,0.03)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:6px;margin-bottom:4px;border-bottom:1px solid var(--line)">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span class="tag" style="font-weight:700">Окно #${wIdx + 1}</span>
+          <label class="small" style="display:flex;align-items:center;gap:4px;margin:0;font-weight:600">
+            <span>Минута:</span>
+            <input type="number" min="1" max="${maxMin}" class="gs-win-min" data-win-min="${grp.minute}" value="${grp.minute}" style="width:62px;padding:3px 6px;text-align:center;font-weight:700">
+          </label>
+          <span class="small muted">замен в окне: <b>${grp.items.length}</b></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <button type="button" class="btn sm alt gs-win-add-one" data-win-min="${grp.minute}" ${maxCanAdd ? '' : 'disabled'} style="font-size:11px;padding:3px 8px">+ Замена в это окно</button>
+          <button type="button" class="btn sm alt gs-win-del" data-win-min="${grp.minute}" title="Удалить всё окно замен" style="font-size:11px;padding:3px 8px">✕ Окно</button>
+        </div>
+      </div>
+      <div>${rowsHtml}</div>
+    </div>`;
+  }).join('');
+
+  const newCondOpts = CLIENT_SUB_COND_OPTIONS.map(([val, lbl]) => `<option value="${val}" ${draftWindow.condition === val ? 'selected' : ''}>${lbl}</option>`).join('');
+  wrap.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+      <div style="font-weight:700;font-size:13px">${titlePrefix} (${validSubs.length}/${subCapTxt} · окон: ${distinctTimes.length}/${winCapTxt})</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border-radius:8px;background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.22);margin-bottom:6px">
+      <span class="small" style="font-weight:700">⏱ Создать окно замен:</span>
+      <label class="small" style="display:flex;align-items:center;gap:4px;margin:0">
+        <span>Минута:</span>
+        <input type="number" min="1" max="${maxMin}" class="gs-new-min" value="${draftWindow.minute}" style="width:62px;padding:4px 6px;text-align:center;font-weight:700" ${maxCanAdd ? '' : 'disabled'}>
+      </label>
+      <label class="small" style="display:flex;align-items:center;gap:4px;margin:0">
+        <span>Замен в окне:</span>
+        <input type="number" min="1" max="${Math.max(1, maxCanAdd)}" class="gs-new-cnt" value="${draftWindow.count}" style="width:54px;padding:4px 6px;text-align:center;font-weight:700" ${maxCanAdd ? '' : 'disabled'}>
+      </label>
+      <select class="gs-new-cond" style="min-width:135px" ${maxCanAdd ? '' : 'disabled'}>${newCondOpts}</select>
+      <button type="button" class="btn sm gs-add-win-btn" ${maxCanAdd ? '' : 'disabled'} style="font-size:11.5px;padding:4px 10px">+ Добавить окно</button>
+    </div>
+    <div class="muted small" style="margin-bottom:${groups.length ? '4px' : '0'}">${subRules.unlimitedSubs ? 'Укажите минуту один раз и количество замен в этом окне (число замен и окон не ограничено).' : 'Укажите минуту один раз и сколько замен сделать в этом окне — все замены внутри окна выйдут на одной остановке.'}</div>
+    ${groupsHtml}
+    ${tooManyWindows ? `<div style="margin-top:8px;padding:7px 10px;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:12px"><b>⚠ Превышено число окон замен (${distinctTimes.length} из ${subRules.maxWindows}):</b> по правилам этого матча допускается максимум ${subRules.maxWindows} ${subRules.maxWindows === 1 ? 'остановка' : 'остановки'} для замен. Измените минуту у одного из окон на уже существующую.</div>` : ''}
+    ${isRpl && subSim?.issues?.length ? `<div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:12px"><b>⛔ Превышен лимит легионеров при заменах (максимум ${limit.onPitch} на поле):</b> ${e(subSim.issues.join('; '))}. Сначала выпустите игрока РФ/ЕАЭС вместо легионера либо объедините встречные замены в одно окно с тем же условием.</div>` : ''}
+    ${isRpl && subSim && !subSim.issues.length && hasLegSubChange ? `<div style="margin-top:8px;padding:7px 10px;border-radius:6px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;font-size:12px"><b>✅ Лимит легионеров при заменах соблюдён:</b> одновременно на поле не более ${subSim.maxLeg} из ${limit.onPitch} легионеров.</div>` : ''}
+  `;
+
+  const addBatchToMinute = (targetMin, countVal, condVal) => {
+    const minVal = Math.max(1, Math.min(maxMin, Math.round(Number(targetMin) || defMin)));
+    const want = Math.max(1, Math.round(Number(countVal) || 1));
+    const cVal = condVal || 'always';
+    const nextList = validSubs.map(x => ({ ...x }));
+    const usedIn = new Set(nextList.map(x => x.inPid));
+    const usedOut = new Set(nextList.map(x => x.outPid));
+    let added = 0;
+    for (let k = 0; k < want; k++) {
+      if (subRules.maxSubs != null && nextList.length >= subRules.maxSubs) break;
+      const nextIn = bPids.find(pid => !usedIn.has(pid));
+      if (!nextIn) break;
+      const nextInPos = poolById[nextIn]?.pos;
+      const availOutPool = [...sPids, ...nextList.filter(x => x.minute < minVal).map(x => x.inPid)]
+        .filter((pid, i, arr) => arr.indexOf(pid) === i && !usedOut.has(pid));
+      const samePosOut = availOutPool.find(pid => poolById[pid]?.pos === nextInPos && poolById[pid]?.pos !== 'ВР');
+      const nonGkOut = availOutPool.find(pid => poolById[pid]?.pos !== 'ВР');
+      const nextOut = samePosOut || nonGkOut || availOutPool[0];
+      if (!nextOut) break;
+      usedIn.add(nextIn);
+      usedOut.add(nextOut);
+      nextList.push({ minute: minVal, outPid: nextOut, inPid: nextIn, condition: cVal });
+      added++;
+    }
+    if (!added) return;
+    draftWindow.minute = Math.min(maxMin - 1, minVal + 10 <= maxMin - 1 ? minVal + 10 : minVal);
+    draftWindow.count = 1;
+    onChange(nextList);
+  };
+
+  const newMinInp = wrap.querySelector('.gs-new-min');
+  const newCntInp = wrap.querySelector('.gs-new-cnt');
+  const newCondSel = wrap.querySelector('.gs-new-cond');
+  newMinInp?.addEventListener('input', () => {
+    const v = Math.round(Number(newMinInp.value));
+    if (Number.isFinite(v) && v >= 1) draftWindow.minute = Math.min(maxMin, v);
+  });
+  newCntInp?.addEventListener('input', () => {
+    const v = Math.round(Number(newCntInp.value));
+    if (Number.isFinite(v) && v >= 1) draftWindow.count = Math.min(Math.max(1, maxCanAdd), v);
+  });
+  newCondSel?.addEventListener('change', () => {
+    draftWindow.condition = newCondSel.value || 'always';
+  });
+  const submitNewWindow = () => {
+    const mVal = Math.max(1, Math.min(maxMin, Math.round(Number(newMinInp?.value) || draftWindow.minute || defMin)));
+    const cVal = Math.max(1, Math.min(Math.max(1, maxCanAdd), Math.round(Number(newCntInp?.value) || draftWindow.count || 1)));
+    const cond = newCondSel?.value || draftWindow.condition || 'always';
+    addBatchToMinute(mVal, cVal, cond);
+  };
+  wrap.querySelector('.gs-add-win-btn')?.addEventListener('click', submitNewWindow);
+  [newMinInp, newCntInp].forEach(inp => inp?.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      submitNewWindow();
+    }
+  }));
+
+  wrap.querySelectorAll('.gs-win-min').forEach(inp => inp.addEventListener('change', () => {
+    const oldMin = Number(inp.dataset.winMin);
+    const newMin = Math.max(1, Math.min(maxMin, Math.round(Number(inp.value) || oldMin || defMin)));
+    const nextList = validSubs.map(x => (x.minute === oldMin ? { ...x, minute: newMin } : { ...x }));
+    onChange(nextList);
+  }));
+  wrap.querySelectorAll('.gs-win-add-one').forEach(btn => btn.addEventListener('click', () => {
+    const winMin = Number(btn.dataset.winMin);
+    const firstInWin = validSubs.find(x => x.minute === winMin);
+    addBatchToMinute(winMin, 1, firstInWin?.condition || 'always');
+  }));
+  wrap.querySelectorAll('.gs-win-del').forEach(btn => btn.addEventListener('click', () => {
+    const winMin = Number(btn.dataset.winMin);
+    onChange(validSubs.filter(x => x.minute !== winMin));
+  }));
+  wrap.querySelectorAll('.gs-out-pick').forEach(sel => sel.addEventListener('change', () => {
+    const idx = Number(sel.dataset.subIdx);
+    const nextList = validSubs.map((x, k) => (k === idx ? { ...x, outPid: sel.value } : { ...x }));
+    onChange(nextList);
+  }));
+  wrap.querySelectorAll('.gs-in-pick').forEach(sel => sel.addEventListener('change', () => {
+    const idx = Number(sel.dataset.subIdx);
+    const nextList = validSubs.map((x, k) => (k === idx ? { ...x, inPid: sel.value } : { ...x }));
+    onChange(nextList);
+  }));
+  wrap.querySelectorAll('.gs-cond-pick').forEach(sel => sel.addEventListener('change', () => {
+    const idx = Number(sel.dataset.subIdx);
+    const nextList = validSubs.map((x, k) => (k === idx ? { ...x, condition: sel.value } : { ...x }));
+    onChange(nextList);
+  }));
+  wrap.querySelectorAll('.gs-del-btn').forEach(btn => btn.addEventListener('click', () => {
+    const idx = Number(btn.dataset.subIdx);
+    onChange(validSubs.filter((_, k) => k !== idx));
+  }));
+
+  if (isLocked) {
+    wrap.querySelectorAll('input, select, button').forEach(el => { el.disabled = true; });
+  }
+  if (onAfterRender) onAfterRender(validSubs);
+}
+
 function lineupForm(box, f, c, withT, app) {
   const isAdmin = S.me?.role === 'admin';
   const L = f.lineup || { ...(f.auto || c.tactic || {}), tactics: '', speech: '', training: '', plannedSubs: [] };
@@ -13011,30 +13304,8 @@ function lineupForm(box, f, c, withT, app) {
     });
   };
 
-  const getNormalizedPlannedSubs = (sPids, bPids) => {
-    if (sPids.length < 11 || !bPids.length || subRules.maxSubs === 0) return [];
-    const sSet = new Set(sPids);
-    const bSet = new Set(bPids);
-    const validSubs = [];
-    const usedIn = new Set();
-    const usedOut = new Set();
-    const onPitch = new Set(sSet);
-    const sorted = currentPlannedSubs
-      .map((item, origIdx) => ({ ...item, origIdx }))
-      .sort((a, b) => a.minute - b.minute || a.origIdx - b.origIdx);
-    for (const ps of sorted) {
-      if (subRules.maxSubs != null && validSubs.length >= subRules.maxSubs) break;
-      if (!ps.outPid || !ps.inPid || ps.outPid === ps.inPid) continue;
-      if (!bSet.has(ps.inPid) || usedIn.has(ps.inPid)) continue;
-      if (!onPitch.has(ps.outPid) || usedOut.has(ps.outPid)) continue;
-      usedIn.add(ps.inPid);
-      usedOut.add(ps.outPid);
-      onPitch.delete(ps.outPid);
-      onPitch.add(ps.inPid);
-      validSubs.push({ minute: ps.minute, outPid: ps.outPid, inPid: ps.inPid, condition: ps.condition || 'always' });
-    }
-    return validSubs;
-  };
+  const getNormalizedPlannedSubs = (sPids, bPids) =>
+    normalizeClientPlannedSubs(currentPlannedSubs, sPids, bPids, subRules.maxSubs, maxMatchMin);
 
   const simulateSubsLegionClient = (subs, sPids) => {
     const isLeg = pid => !!poolById[pid]?.isLegionnaire;
@@ -13130,145 +13401,35 @@ function lineupForm(box, f, c, withT, app) {
     if (resetBtn) resetBtn.disabled = a === 0 && b === 0;
     if (bonusEditorApi) bonusEditorApi.updateSets(sPids, bPids);
   };
-  const SUB_COND_OPTIONS = [
-    ['always', 'При любом счёте'],
-    ['winning', 'Если ведём в счёте'],
-    ['losing', 'Если проигрываем'],
-    ['drawing', 'При ничьей'],
-    ['not_winning', 'Если не ведём'],
-    ['tired', 'При усталости игрока']
-  ];
+  const draftSubWindow = {
+    minute: Math.min(maxMatchMin, Math.max(1, maxMatchMin >= 85 ? 60 : Math.round(maxMatchMin * 0.65))),
+    count: 1,
+    condition: 'always'
+  };
   const renderSubsEditor = () => {
-    const wrap = box.querySelector('#subs_editor');
-    if (!wrap) return;
-    const subCapTxt = subRules.maxSubs == null ? '∞' : String(subRules.maxSubs);
-    const winCapTxt = subRules.maxWindows == null ? '∞' : String(subRules.maxWindows);
-    if (subRules.maxSubs === 0) {
-      currentPlannedSubs = [];
-      wrap.innerHTML = `<div style="font-weight:700;font-size:13px;margin-bottom:4px">🔄 Плановые замены на матч (без замен)</div><div class="muted small">По условиям этого матча замены отключены.</div>`;
-      cnt();
-      return;
-    }
     const { sPids, bPids } = getSelected();
-    if (sPids.length < 11 || bPids.length === 0) {
-      wrap.innerHTML = `<div style="font-weight:700;font-size:13px;margin-bottom:4px">🔄 Плановые замены на матч (${e(subRules.label)})</div><div class="muted small">Чтобы поставить замены, выберите 11 игроков в стартовый состав и хотя бы 1 игрока на скамейку.</div>`;
-      cnt();
-      return;
-    }
-    const validSubs = getNormalizedPlannedSubs(sPids, bPids);
-    currentPlannedSubs = validSubs;
-
-    const distinctTimes = [];
-    for (const tSec of validSubs.map(x => x.minute * 60).sort((a, b) => a - b)) {
-      if (!distinctTimes.length || tSec - distinctTimes[distinctTimes.length - 1] > 90) distinctTimes.push(tSec);
-    }
-    const tooManyWindows = subRules.maxWindows != null && distinctTimes.length > subRules.maxWindows;
-    const subSim = simulateSubsLegionClient(validSubs, sPids);
-    const hasLegSubChange = isRpl && validSubs.some((_, k) => (subSim.rowStates[k]?.delta || 0) !== 0);
-
-    const rowsHtml = validSubs.map((ps, idx) => {
-      const outCandidates = [...sPids, ...validSubs.slice(0, idx).map(x => x.inPid)].filter((pid, k, arr) => arr.indexOf(pid) === k && (pid === ps.outPid || !validSubs.some((o, oi) => oi !== idx && o.outPid === pid)));
-      const inCandidates = bPids.filter(pid => pid === ps.inPid || !validSubs.some((o, oi) => oi !== idx && o.inPid === pid));
-      const outOpts = outCandidates.map(pid => {
-        const p = poolById[pid];
-        const legHint = isRpl && p?.isLegionnaire ? ' [Лег]' : '';
-        return `<option value="${e(pid)}" ${pid === ps.outPid ? 'selected' : ''}>${e(clientPosLabel(p || '?'))} · ${e(p?.name || pid)}${legHint}</option>`;
-      }).join('');
-      const inOpts = inCandidates.map(pid => {
-        const p = poolById[pid];
-        const legHint = isRpl && p?.isLegionnaire ? ' [Лег]' : '';
-        return `<option value="${e(pid)}" ${pid === ps.inPid ? 'selected' : ''}>${e(clientPosLabel(p || '?'))} · ${e(p?.name || pid)}${legHint}</option>`;
-      }).join('');
-      const condOpts = SUB_COND_OPTIONS.map(([val, lbl]) => `<option value="${val}" ${ps.condition === val ? 'selected' : ''}>${lbl}</option>`).join('');
-      const stInfo = subSim.rowStates[idx];
-      const rowIsOver = isRpl && stInfo?.isOver;
-      const legBadge = isRpl && stInfo
-        ? `<span class="tag" style="font-size:11px;white-space:nowrap;${rowIsOver ? 'background:#fee2e2;color:#991b1b;border-color:#fca5a5;font-weight:700' : 'background:rgba(22,163,74,.1);color:#15803d;border-color:rgba(22,163,74,.28)'}">${rowIsOver ? '⛔' : '⚡'} ${stInfo.projected}/${limit.onPitch} лег.</span>`
-        : '';
-      return `<div style="display:flex;align-items:center;gap:8px;padding:${rowIsOver ? '7px 8px' : '6px 0'};border-bottom:1px dashed var(--line);flex-wrap:wrap;${rowIsOver ? 'background:rgba(220,38,38,.06);border:1px solid rgba(220,38,38,.3);border-radius:7px;margin:4px 0' : ''}">
-        <label class="small" style="display:flex;align-items:center;gap:4px;margin:0;white-space:nowrap">
-          <span>Мин:</span>
-          <input type="number" min="1" max="${maxMatchMin}" class="sub-min-inp" data-sub-idx="${idx}" value="${ps.minute}" style="width:62px;padding:4px 6px;text-align:center;font-weight:700">
-        </label>
-        <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:170px">
-          <span class="small muted" style="white-space:nowrap">Уходит:</span>
-          <select class="sub-out-pick" data-sub-idx="${idx}" style="flex:1;min-width:120px">${outOpts}</select>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:170px">
-          <span class="small muted" style="white-space:nowrap">Выходит:</span>
-          <select class="sub-in-pick" data-sub-idx="${idx}" style="flex:1;min-width:120px">${inOpts}</select>
-        </div>
-        <select class="sub-cond-pick" data-sub-idx="${idx}" style="min-width:140px">${condOpts}</select>
-        ${legBadge}
-        <button type="button" class="btn sm alt sub-del-btn" data-sub-idx="${idx}" title="Удалить замену" style="padding:3px 8px">✕</button>
-      </div>`;
-    }).join('');
-
-    const availBenchForNew = bPids.filter(pid => !validSubs.some(x => x.inPid === pid));
-    const availOutForNew = sPids.filter(pid => !validSubs.some(x => x.outPid === pid) && poolById[pid]?.pos !== 'ВР');
-    const canAdd = (subRules.maxSubs == null || validSubs.length < subRules.maxSubs) && availBenchForNew.length > 0 && (availOutForNew.length > 0 || sPids.some(pid => !validSubs.some(x => x.outPid === pid)));
-
-    wrap.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
-        <div style="font-weight:700;font-size:13px">🔄 Плановые замены на матч (${validSubs.length}/${subCapTxt} · слотов: ${distinctTimes.length}/${winCapTxt})</div>
-        <button type="button" class="btn sm alt" id="add_sub_btn" ${canAdd ? '' : 'disabled'} style="font-size:11.5px;padding:3px 10px">+ Добавить замену</button>
-      </div>
-      <div class="muted small" style="margin-bottom:${validSubs.length ? '6px' : '0'}">${subRules.unlimitedSubs ? 'Укажите минуту, кого заменить и при каком счёте проводить замену (число замен и окон не ограничено).' : 'Укажите минуту, кого заменить и при каком счёте проводить замену. На одну и ту же минуту можно поставить несколько замен (одно окно).'}</div>
-      ${rowsHtml ? `<div>${rowsHtml}</div>` : ''}
-      ${tooManyWindows ? `<div style="margin-top:8px;padding:7px 10px;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:12px"><b>⚠ Превышено число окон замен (${distinctTimes.length} из ${subRules.maxWindows}):</b> по правилам этого матча допускается максимум ${subRules.maxWindows} ${subRules.maxWindows === 1 ? 'остановка' : 'остановки'} для замен. Объедините часть замен на одну минуту.</div>` : ''}
-      ${isRpl && subSim.issues.length ? `<div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:12px"><b>⛔ Превышен лимит легионеров при заменах (максимум ${limit.onPitch} на поле):</b> ${e(subSim.issues.join('; '))}. Сначала выпустите игрока РФ/ЕАЭС вместо легионера либо объедините встречные замены на одну минуту с тем же условием.</div>` : ''}
-      ${isRpl && !subSim.issues.length && hasLegSubChange ? `<div style="margin-top:8px;padding:7px 10px;border-radius:6px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;font-size:12px"><b>✅ Лимит легионеров при заменах соблюдён:</b> одновременно на поле не более ${subSim.maxLeg} из ${limit.onPitch} легионеров.</div>` : ''}
-    `;
-
-    wrap.querySelector('#add_sub_btn')?.addEventListener('click', () => {
-      const nextIn = bPids.find(pid => !currentPlannedSubs.some(x => x.inPid === pid));
-      const nextInPos = poolById[nextIn]?.pos;
-      const samePosOut = sPids.find(pid => !currentPlannedSubs.some(x => x.outPid === pid) && poolById[pid]?.pos === nextInPos);
-      const nonGkOut = sPids.find(pid => !currentPlannedSubs.some(x => x.outPid === pid) && poolById[pid]?.pos !== 'ВР');
-      const nextOut = samePosOut || nonGkOut || sPids.find(pid => !currentPlannedSubs.some(x => x.outPid === pid));
-      if (!nextIn || !nextOut) return;
-      const defaultMin = Math.min(Math.max(1, maxMatchMin - 2), (maxMatchMin >= 85 ? 60 : Math.round(maxMatchMin * 0.65)) + currentPlannedSubs.length * Math.max(3, Math.round(maxMatchMin * 0.08)));
-      currentPlannedSubs.push({ minute: defaultMin, outPid: nextOut, inPid: nextIn, condition: 'always' });
-      renderSubsEditor();
-    });
-    wrap.querySelectorAll('.sub-min-inp').forEach(inp => {
-      inp.addEventListener('change', () => {
-        const idx = Number(inp.dataset.subIdx);
-        const v = Math.max(1, Math.min(maxMatchMin, Math.round(Number(inp.value) || Math.min(maxMatchMin, 65))));
-        if (currentPlannedSubs[idx]) currentPlannedSubs[idx].minute = v;
+    renderGroupedSubsEditor({
+      wrap: box.querySelector('#subs_editor'),
+      titlePrefix: '🔄 Плановые замены на матч',
+      emptyNeedsPlayersMsg: 'Чтобы поставить замены, выберите 11 игроков в стартовый состав и хотя бы 1 игрока на скамейку.',
+      sPids,
+      bPids,
+      poolById,
+      subRules,
+      maxMatchMin,
+      plannedSubs: currentPlannedSubs,
+      draftWindow: draftSubWindow,
+      isLocked: isLineupLocked(),
+      isRpl,
+      limit,
+      simulateSubsLegionClient,
+      onSyncValid: valid => { currentPlannedSubs = valid; },
+      onChange: nextList => {
+        currentPlannedSubs = nextList;
         renderSubsEditor();
-      });
+      },
+      onAfterRender: () => { cnt(); }
     });
-    wrap.querySelectorAll('.sub-out-pick').forEach(sel => {
-      sel.addEventListener('change', () => {
-        const idx = Number(sel.dataset.subIdx);
-        if (currentPlannedSubs[idx]) currentPlannedSubs[idx].outPid = sel.value;
-        renderSubsEditor();
-      });
-    });
-    wrap.querySelectorAll('.sub-in-pick').forEach(sel => {
-      sel.addEventListener('change', () => {
-        const idx = Number(sel.dataset.subIdx);
-        if (currentPlannedSubs[idx]) currentPlannedSubs[idx].inPid = sel.value;
-        renderSubsEditor();
-      });
-    });
-    wrap.querySelectorAll('.sub-cond-pick').forEach(sel => {
-      sel.addEventListener('change', () => {
-        const idx = Number(sel.dataset.subIdx);
-        if (currentPlannedSubs[idx]) currentPlannedSubs[idx].condition = sel.value;
-        renderSubsEditor();
-      });
-    });
-    wrap.querySelectorAll('.sub-del-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const idx = Number(btn.dataset.subIdx);
-        currentPlannedSubs.splice(idx, 1);
-        renderSubsEditor();
-      });
-    });
-    if (wrap) wrap.querySelectorAll('select, button').forEach(el => { if (isLineupLocked()) el.disabled = true; });
-    cnt();
   };
 
   cnt();
@@ -13645,6 +13806,7 @@ function intraLineupForm(box, f, c, withT, app) {
   };
   seedAssignments(initH, initA);
 
+  const defSubMin = Math.min(maxMatchMin, Math.max(1, maxMatchMin >= 85 ? 60 : Math.round(maxMatchMin * 0.65)));
   const sideState = {
     home: {
       formation: initH.formation || '4-3-3',
@@ -13652,6 +13814,7 @@ function intraLineupForm(box, f, c, withT, app) {
       slots: Array.isArray(initH.slots) ? initH.slots.map(x => ({ ...x })) : [],
       roles: { ...(initH.roles || {}) },
       plannedSubs: Array.isArray(initH.plannedSubs) ? initH.plannedSubs.map(x => ({ ...x })) : [],
+      draftWindow: { minute: defSubMin, count: 1, condition: 'always' },
       tactics: initH.tactics || '',
       speech: initH.speech || '',
       training: initH.training || ''
@@ -13662,6 +13825,7 @@ function intraLineupForm(box, f, c, withT, app) {
       slots: Array.isArray(initA.slots) ? initA.slots.map(x => ({ ...x })) : [],
       roles: { ...(initA.roles || {}) },
       plannedSubs: Array.isArray(initA.plannedSubs) ? initA.plannedSubs.map(x => ({ ...x })) : [],
+      draftWindow: { minute: defSubMin, count: 1, condition: 'always' },
       tactics: initA.tactics || '',
       speech: initA.speech || '',
       training: initA.training || ''
@@ -13760,14 +13924,6 @@ function intraLineupForm(box, f, c, withT, app) {
     });
   };
 
-  const SUB_COND_OPTIONS = [
-    ['always', 'При любом счёте'],
-    ['winning', 'Если ведём в счёте'],
-    ['losing', 'Если проигрываем'],
-    ['drawing', 'При ничьей'],
-    ['not_winning', 'Если не ведём'],
-    ['tired', 'При усталости игрока']
-  ];
   const isCompleteFormation = fm => /^\d(?:-\d){1,3}$/.test(String(fm || '').trim());
 
   const renderSummary = () => {
@@ -13926,68 +14082,25 @@ function intraLineupForm(box, f, c, withT, app) {
     }
 
     // Subs editor
-    const subsWrap = box.querySelector('#intra_subs_editor');
-    if (subsWrap) {
-      const sSet = new Set(sPids), bSet = new Set(bPids);
-      const subCapTxt = subRules.maxSubs == null ? '∞' : String(subRules.maxSubs);
-      const winCapTxt = subRules.maxWindows == null ? '∞' : String(subRules.maxWindows);
-      if (subRules.maxSubs === 0) {
-        stSide.plannedSubs = [];
-        subsWrap.innerHTML = `<div style="font-weight:700;font-size:13px;margin-bottom:4px">🔄 Плановые замены — ${e(sideLabel)} (без замен)</div><div class="muted small">По условиям этого спарринга замены отключены.</div>`;
-      } else if (sPids.length < 11 || bPids.length === 0) {
-        subsWrap.innerHTML = `<div style="font-weight:700;font-size:13px;margin-bottom:4px">🔄 Плановые замены — ${e(sideLabel)} (${e(subRules.label)})</div><div class="muted small">Нужно 11 игроков старта и минимум 1 запасной у «${e(sideLabel)}».</div>`;
-      } else {
-        const validSubs = [];
-        const usedIn = new Set(), usedOut = new Set(), onPitch = new Set(sSet);
-        const sorted = stSide.plannedSubs.map((x, idx) => ({ ...x, origIdx: idx })).sort((a, b) => a.minute - b.minute || a.origIdx - b.origIdx);
-        for (const ps of sorted) {
-          if (subRules.maxSubs != null && validSubs.length >= subRules.maxSubs) break;
-          if (!ps.outPid || !ps.inPid || ps.outPid === ps.inPid) continue;
-          if (!bSet.has(ps.inPid) || usedIn.has(ps.inPid)) continue;
-          if (!onPitch.has(ps.outPid) || usedOut.has(ps.outPid)) continue;
-          usedIn.add(ps.inPid); usedOut.add(ps.outPid); onPitch.delete(ps.outPid); onPitch.add(ps.inPid);
-          validSubs.push({ minute: ps.minute, outPid: ps.outPid, inPid: ps.inPid, condition: ps.condition || 'always' });
-        }
-        stSide.plannedSubs = validSubs;
-        const distinctTimes = [];
-        for (const tSec of validSubs.map(x => x.minute * 60).sort((a, b) => a - b)) {
-          if (!distinctTimes.length || tSec - distinctTimes[distinctTimes.length - 1] > 90) distinctTimes.push(tSec);
-        }
-        const tooManyWindows = subRules.maxWindows != null && distinctTimes.length > subRules.maxWindows;
-        const canAdd = (subRules.maxSubs == null || validSubs.length < subRules.maxSubs) && bPids.some(pid => !validSubs.some(x => x.inPid === pid));
-        subsWrap.innerHTML = `
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
-            <div style="font-weight:700;font-size:13px">🔄 Плановые замены — ${e(sideLabel)} (${validSubs.length}/${subCapTxt} · слотов: ${distinctTimes.length}/${winCapTxt})</div>
-            <button type="button" class="btn sm alt" id="intra_add_sub" ${canAdd ? '' : 'disabled'} style="font-size:11.5px;padding:3px 10px">+ Добавить замену</button>
-          </div>
-          ${validSubs.map((ps, idx) => {
-            const outOpts = [...sPids, ...validSubs.slice(0, idx).map(x => x.inPid)].filter((pid, k, arr) => arr.indexOf(pid) === k && (pid === ps.outPid || !validSubs.some((o, oi) => oi !== idx && o.outPid === pid))).map(pid => `<option value="${e(pid)}" ${pid === ps.outPid ? 'selected' : ''}>${e(clientPosLabel(poolById[pid] || '?'))} · ${e(poolById[pid]?.name || pid)}</option>`).join('');
-            const inOpts = bPids.filter(pid => pid === ps.inPid || !validSubs.some((o, oi) => oi !== idx && o.inPid === pid)).map(pid => `<option value="${e(pid)}" ${pid === ps.inPid ? 'selected' : ''}>${e(clientPosLabel(poolById[pid] || '?'))} · ${e(poolById[pid]?.name || pid)}</option>`).join('');
-            const condOpts = SUB_COND_OPTIONS.map(([val, lbl]) => `<option value="${val}" ${ps.condition === val ? 'selected' : ''}>${lbl}</option>`).join('');
-            return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px dashed var(--line);flex-wrap:wrap">
-              <input type="number" min="1" max="${maxMatchMin}" class="intra-sub-min" data-sub-idx="${idx}" value="${Math.max(1, Math.min(maxMatchMin, Number(ps.minute) || Math.min(maxMatchMin, 65)))}" style="width:58px;padding:4px 6px;text-align:center;font-weight:700">
-              <select class="intra-sub-out" data-sub-idx="${idx}" style="flex:1;min-width:120px">${outOpts}</select>
-              <select class="intra-sub-in" data-sub-idx="${idx}" style="flex:1;min-width:120px">${inOpts}</select>
-              <select class="intra-sub-cond" data-sub-idx="${idx}" style="min-width:130px">${condOpts}</select>
-              <button type="button" class="btn sm alt intra-sub-del" data-sub-idx="${idx}" style="padding:3px 8px">✕</button>
-            </div>`;
-          }).join('')}
-          ${tooManyWindows ? `<div style="margin-top:8px;padding:7px 10px;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:12px"><b>⚠ Превышено число окон замен (${distinctTimes.length} из ${subRules.maxWindows}):</b> объедините часть замен на одну минуту.</div>` : ''}`;
-        subsWrap.querySelector('#intra_add_sub')?.addEventListener('click', () => {
-          const nextIn = bPids.find(pid => !stSide.plannedSubs.some(x => x.inPid === pid));
-          const nextOut = sPids.find(pid => !stSide.plannedSubs.some(x => x.outPid === pid) && poolById[pid]?.pos !== 'ВР') || sPids.find(pid => !stSide.plannedSubs.some(x => x.outPid === pid));
-          if (!nextIn || !nextOut) return;
-          const defaultMin = Math.min(Math.max(1, maxMatchMin - 2), (maxMatchMin >= 85 ? 60 : Math.round(maxMatchMin * 0.65)) + stSide.plannedSubs.length * Math.max(3, Math.round(maxMatchMin * 0.08)));
-          stSide.plannedSubs.push({ minute: defaultMin, outPid: nextOut, inPid: nextIn, condition: 'always' });
-          renderTacticsPane();
-        });
-        subsWrap.querySelectorAll('.intra-sub-min').forEach(inp => inp.addEventListener('change', () => { const i = Number(inp.dataset.subIdx); if (stSide.plannedSubs[i]) stSide.plannedSubs[i].minute = Math.max(1, Math.min(maxMatchMin, Math.round(Number(inp.value) || Math.min(maxMatchMin, 65)))); renderTacticsPane(); }));
-        subsWrap.querySelectorAll('.intra-sub-out').forEach(sel => sel.addEventListener('change', () => { const i = Number(sel.dataset.subIdx); if (stSide.plannedSubs[i]) stSide.plannedSubs[i].outPid = sel.value; renderTacticsPane(); }));
-        subsWrap.querySelectorAll('.intra-sub-in').forEach(sel => sel.addEventListener('change', () => { const i = Number(sel.dataset.subIdx); if (stSide.plannedSubs[i]) stSide.plannedSubs[i].inPid = sel.value; renderTacticsPane(); }));
-        subsWrap.querySelectorAll('.intra-sub-cond').forEach(sel => sel.addEventListener('change', () => { const i = Number(sel.dataset.subIdx); if (stSide.plannedSubs[i]) stSide.plannedSubs[i].condition = sel.value; }));
-        subsWrap.querySelectorAll('.intra-sub-del').forEach(btn => btn.addEventListener('click', () => { stSide.plannedSubs.splice(Number(btn.dataset.subIdx), 1); renderTacticsPane(); }));
+    renderGroupedSubsEditor({
+      wrap: box.querySelector('#intra_subs_editor'),
+      titlePrefix: `🔄 Плановые замены — ${e(sideLabel)}`,
+      emptyNeedsPlayersMsg: `Нужно 11 игроков старта и минимум 1 запасной у «${e(sideLabel)}».`,
+      sPids,
+      bPids,
+      poolById,
+      subRules,
+      maxMatchMin,
+      plannedSubs: stSide.plannedSubs,
+      draftWindow: stSide.draftWindow,
+      isLocked: isIntraLocked(),
+      isRpl: false,
+      onSyncValid: valid => { stSide.plannedSubs = valid; },
+      onChange: nextList => {
+        stSide.plannedSubs = nextList;
+        renderTacticsPane();
       }
-    }
+    });
 
     // Roles editor
     const rolesWrap = box.querySelector('#intra_roles_editor');
@@ -14151,16 +14264,22 @@ function intraLineupForm(box, f, c, withT, app) {
     }
     const buildPayload = (sKey) => {
       const { sPids, bPids } = getSidePids(sKey);
+      const sSet = new Set(sPids);
       const stSide = sideState[sKey];
       const fm = isCompleteFormation(stSide.formation) ? String(stSide.formation).trim() : '4-3-3';
       const slotsPayload = clientAssignSlots(fm, sPids, stSide.slots, poolById).map(x => ({ slot: x.slotPos, pid: x.pid }));
+      const cleanRoles = {};
+      for (const [rk, rPid] of Object.entries(stSide.roles || {})) {
+        if (rPid && sSet.has(rPid)) cleanRoles[rk] = rPid;
+      }
+      const cleanSubs = normalizeClientPlannedSubs(stSide.plannedSubs, sPids, bPids, subRules.maxSubs, maxMatchMin);
       return {
         formation: fm,
         starters: slotsPayload.length === 11 ? slotsPayload.map(x => x.pid) : sPids,
         bench: bPids.slice(0, subRules.maxBench),
         slots: slotsPayload.length === 11 ? slotsPayload : undefined,
-        roles: stSide.roles,
-        plannedSubs: stSide.plannedSubs,
+        roles: cleanRoles,
+        plannedSubs: cleanSubs,
         tactics: String(stSide.tactics || '').slice(0, 10000),
         speech: String(stSide.speech || '').slice(0, 10000),
         training: String(stSide.training || '').slice(0, 7000)
